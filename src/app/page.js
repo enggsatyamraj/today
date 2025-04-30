@@ -154,7 +154,7 @@ export default function LandingPage() {
               </h1>
 
               <p className="text-lg text-gray-600 md:text-xl leading-relaxed">
-                Stay productive and organized with a simple, customizable task management system designed to help you focus on today's priorities.
+                Stay productive and organized with a simple, customizable task management system designed to help you focus on today&apos;s priorities.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
@@ -186,7 +186,7 @@ export default function LandingPage() {
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-lg font-semibold flex items-center">
                     <CheckSquare className="h-5 w-5 mr-2 text-blue-600" />
-                    Today's Tasks
+                    Today&apos;s Tasks
                   </h3>
                   <div className="text-sm text-gray-500 flex items-center">
                     <Clock className="h-4 w-4 mr-1" />
@@ -220,9 +220,9 @@ export default function LandingPage() {
                         </span>
                       </div>
                       <span className={`text-xs px-2 py-1 rounded-full ${task.badge === "High" ? 'bg-red-100 text-red-700' :
-                          task.badge === "In Progress" ? 'bg-blue-100 text-blue-700' :
-                            task.badge === "Completed" ? 'bg-green-100 text-green-700' :
-                              'bg-gray-100 text-gray-700'
+                        task.badge === "In Progress" ? 'bg-blue-100 text-blue-700' :
+                          task.badge === "Completed" ? 'bg-green-100 text-green-700' :
+                            'bg-gray-100 text-gray-700'
                         }`}>
                         {task.badge}
                       </span>
