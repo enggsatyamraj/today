@@ -21,11 +21,11 @@ import {
     CheckCircle2,
     InfoIcon
 } from 'lucide-react';
-import Subtask from './Subtask';
 import taskService from '@/lib/task-service';
 import subtaskService from '@/lib/subtask-service';
 import timeTrackingService from '@/lib/time-tracking-service';
 import { format } from 'date-fns';
+import Subtask from './SubTask';
 
 export default function TaskDialog({
     task,
