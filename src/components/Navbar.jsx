@@ -3,18 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/auth-context';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
     MenuIcon,
     X,
     LayoutDashboard,
     Settings,
     LogOut,
-    User,
-    ChevronDown,
-    CheckSquare,
-    BarChart3,
-    Clock
+    CheckSquare
 } from 'lucide-react';
 import {
     Sheet,
@@ -34,25 +30,20 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 export default function Navbar() {
     const { user, signOut } = useAuth();
     const pathname = usePathname();
+    const router = useRouter();
     const [scrolled, setScrolled] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
 
-    // Navigation links configuration
+    // Simplified navigation links - only Dashboard and Settings
     const navLinks = [
         { href: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4 mr-2" /> },
-        { href: '/tasks', label: 'My Tasks', icon: <CheckSquare className="h-4 w-4 mr-2" /> },
-        { href: '/reports', label: 'Reports', icon: <BarChart3 className="h-4 w-4 mr-2" /> },
-        { href: '/activity', label: 'Activity', icon: <Clock className="h-4 w-4 mr-2" /> },
+        { href: '/settings', label: 'Settings', icon: <Settings className="h-4 w-4 mr-2" /> }
     ];
 
     // Handle scroll effect
     useEffect(() => {
         const handleScroll = () => {
-            if (window.scrollY > 10) {
-                setScrolled(true);
-            } else {
-                setScrolled(false);
-            }
+            setScrolled(window.scrollY > 10);
         };
 
         window.addEventListener('scroll', handleScroll);
@@ -73,8 +64,16 @@ export default function Navbar() {
 
     // Handle logout
     const handleSignOut = async () => {
-        await signOut();
+        try {
+            await signOut();
+            router.push('/login');
+        } catch (error) {
+            console.error('Error signing out:', error);
+        }
     };
+
+    // If no user, don't show the navbar
+    if (!user) return null;
 
     return (
         <header
@@ -117,43 +116,41 @@ export default function Navbar() {
 
                     {/* User menu and mobile menu trigger */}
                     <div className="flex items-center">
-                        {user && (
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                                        <Avatar className="h-8 w-8 border border-gray-200">
-                                            <AvatarFallback className="bg-blue-100 text-blue-700">
-                                                {getUserInitials()}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-56">
-                                    <div className="flex items-center justify-start gap-2 p-2">
-                                        <div className="flex flex-col space-y-1 leading-none">
-                                            {user.email && (
-                                                <p className="font-medium text-sm text-gray-700">{user.email}</p>
-                                            )}
-                                        </div>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                                    <Avatar className="h-8 w-8 border border-gray-200">
+                                        <AvatarFallback className="bg-blue-100 text-blue-700">
+                                            {getUserInitials()}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                                <div className="flex items-center justify-start gap-2 p-2">
+                                    <div className="flex flex-col space-y-1 leading-none">
+                                        {user.email && (
+                                            <p className="font-medium text-sm text-gray-700">{user.email}</p>
+                                        )}
                                     </div>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem asChild>
-                                        <Link href="/settings" className="flex items-center cursor-pointer">
-                                            <Settings className="mr-2 h-4 w-4" />
-                                            <span>Settings</span>
-                                        </Link>
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        className="text-red-600 cursor-pointer focus:bg-red-50 focus:text-red-600"
-                                        onClick={handleSignOut}
-                                    >
-                                        <LogOut className="mr-2 h-4 w-4" />
-                                        <span>Log out</span>
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                        )}
+                                </div>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem asChild>
+                                    <Link href="/settings" className="flex items-center cursor-pointer">
+                                        <Settings className="mr-2 h-4 w-4" />
+                                        <span>Settings</span>
+                                    </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    className="text-red-600 cursor-pointer focus:bg-red-50 focus:text-red-600"
+                                    onClick={handleSignOut}
+                                >
+                                    <LogOut className="mr-2 h-4 w-4" />
+                                    <span>Log out</span>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
 
                         {/* Mobile menu trigger */}
                         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -202,40 +199,30 @@ export default function Navbar() {
                                         </nav>
                                     </div>
 
-                                    {user && (
-                                        <div className="border-t pt-4 mt-6">
-                                            <div className="flex items-center px-3 py-2">
-                                                <Avatar className="h-10 w-10 border border-gray-200">
-                                                    <AvatarFallback className="bg-blue-100 text-blue-700">
-                                                        {getUserInitials()}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <div className="ml-3">
-                                                    <p className="text-sm font-medium">{user.email}</p>
-                                                </div>
-                                            </div>
-                                            <div className="mt-3 space-y-1">
-                                                <Link
-                                                    href="/settings"
-                                                    className="flex items-center px-3 py-2 text-base font-medium rounded-md text-gray-700 hover:text-blue-600 hover:bg-gray-100"
-                                                    onClick={() => setMobileOpen(false)}
-                                                >
-                                                    <Settings className="h-4 w-4 mr-2" />
-                                                    Settings
-                                                </Link>
-                                                <button
-                                                    onClick={() => {
-                                                        setMobileOpen(false);
-                                                        handleSignOut();
-                                                    }}
-                                                    className="w-full flex items-center px-3 py-2 text-base font-medium rounded-md text-red-600 hover:bg-red-50"
-                                                >
-                                                    <LogOut className="h-4 w-4 mr-2" />
-                                                    Log out
-                                                </button>
+                                    <div className="border-t pt-4 mt-6">
+                                        <div className="flex items-center px-3 py-2">
+                                            <Avatar className="h-10 w-10 border border-gray-200">
+                                                <AvatarFallback className="bg-blue-100 text-blue-700">
+                                                    {getUserInitials()}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <div className="ml-3">
+                                                <p className="text-sm font-medium">{user.email}</p>
                                             </div>
                                         </div>
-                                    )}
+                                        <div className="mt-3">
+                                            <button
+                                                onClick={() => {
+                                                    setMobileOpen(false);
+                                                    handleSignOut();
+                                                }}
+                                                className="w-full flex items-center px-3 py-2 text-base font-medium rounded-md text-red-600 hover:bg-red-50"
+                                            >
+                                                <LogOut className="h-4 w-4 mr-2" />
+                                                Log out
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </SheetContent>
                         </Sheet>

@@ -1,16 +1,19 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '@/context/auth-context';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
     PlusCircle,
-    CheckCircle,
     Circle,
     Clock,
     Play,
     AlertCircle,
     Search,
-    LayoutDashboard
+    LayoutDashboard,
+    CheckCircle,
+    Settings as SettingsIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +25,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 // Import helper services
 import taskService, { TASK_STATUS } from '@/lib/task-service';
+import taskStageService from '@/lib/task-stage-service';
 import subtaskService from '@/lib/subtask-service';
 import timeTrackingService from '@/lib/time-tracking-service';
 import subscriptionUtils from '@/lib/subscription-utils';
@@ -31,9 +35,20 @@ import TaskCard from '@/components/TaskCard';
 import TaskDialog from '@/components/TaskDialog';
 import Timer from '@/components/Timer';
 
+// Map of icon names to components
+const iconComponents = {
+    Circle: <Circle className="h-4 w-4" />,
+    Play: <Play className="h-4 w-4" />,
+    Clock: <Clock className="h-4 w-4" />,
+    CheckCircle: <CheckCircle className="h-4 w-4" />,
+    AlertCircle: <AlertCircle className="h-4 w-4" />
+};
+
 export default function Dashboard() {
     const { user } = useAuth();
+    const router = useRouter();
     const [tasks, setTasks] = useState([]);
+    const [stages, setStages] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -45,7 +60,8 @@ export default function Dashboard() {
         completed: 0,
         inProgress: 0,
         notStarted: 0,
-        workingOn: 0
+        workingOn: 0,
+        byStatus: {}
     });
 
     // Time tracking state
@@ -59,13 +75,48 @@ export default function Dashboard() {
     // Subscriptions reference
     const subscriptionsRef = useRef(null);
 
-    // Status columns
-    const columns = [
-        { id: 'not-started', title: 'Not Started', status: TASK_STATUS.NOT_STARTED, icon: <Circle className="h-4 w-4" /> },
-        { id: 'in-progress', title: 'In Progress', status: TASK_STATUS.IN_PROGRESS, icon: <Play className="h-4 w-4" /> },
-        { id: 'working-on', title: 'Working On', status: TASK_STATUS.WORKING_ON, icon: <Clock className="h-4 w-4" /> },
-        { id: 'completed', title: 'Completed', status: TASK_STATUS.COMPLETED, icon: <CheckCircle className="h-4 w-4" /> }
-    ];
+    // Process stages with icons
+    const columnsWithIcons = useMemo(() => {
+        if (!stages.length) {
+            // Fallback to default columns if no stages loaded yet
+            return [
+                { id: 'not-started', title: 'Not Started', status: TASK_STATUS.NOT_STARTED, icon: <Circle className="h-4 w-4" /> },
+                { id: 'in-progress', title: 'In Progress', status: TASK_STATUS.IN_PROGRESS, icon: <Play className="h-4 w-4" /> },
+                { id: 'working-on', title: 'Working On', status: TASK_STATUS.WORKING_ON, icon: <Clock className="h-4 w-4" /> },
+                { id: 'completed', title: 'Completed', status: TASK_STATUS.COMPLETED, icon: <CheckCircle className="h-4 w-4" /> }
+            ];
+        }
+
+        return stages.map(stage => ({
+            id: stage.id,
+            title: stage.name,
+            status: stage.name,
+            icon: iconComponents[stage.icon] || <Circle className="h-4 w-4" />,
+            color: stage.color
+        }));
+    }, [stages]);
+
+    // Fetch stages
+    const fetchStages = async () => {
+        if (!user) return;
+
+        try {
+            const { data, error } = await taskStageService.getActiveStagesWithIcons(user.id);
+
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                setStages(data);
+            } else {
+                // Create default stages if none exist
+                await taskStageService.createDefaultStages(user.id);
+                const { data: newStages } = await taskStageService.getActiveStagesWithIcons(user.id);
+                setStages(newStages || []);
+            }
+        } catch (error) {
+            console.error('Error fetching stages:', error);
+        }
+    };
 
     // Fetch tasks
     const fetchTasks = async () => {
@@ -95,8 +146,8 @@ export default function Dashboard() {
     useEffect(() => {
         if (!user) return;
 
-        // Fetch initial tasks
-        fetchTasks();
+        // Fetch stages first, then tasks
+        fetchStages().then(() => fetchTasks());
 
         // Setup subscriptions for real-time updates
         subscriptionsRef.current = subscriptionUtils.setupSubscriptions(user.id, fetchTasks);
@@ -122,13 +173,17 @@ export default function Dashboard() {
             setIsAddingTask(true);
             setError(null);
 
-            const { error } = await taskService.addTask(user.id, newTaskTitle.trim());
+            // Get the first stage (typically "Not Started")
+            const firstStage = stages.length > 0 ? stages[0] : null;
+            const stageId = firstStage ? firstStage.id : null;
+
+            const { error } = await taskService.addTask(user.id, newTaskTitle.trim(), stageId);
 
             if (error) throw error;
 
             setNewTaskTitle('');
 
-            // Fetch updated tasks (or we could just add the new task to state)
+            // Fetch updated tasks
             await fetchTasks();
         } catch (error) {
             console.error('Error adding task:', error);
@@ -149,9 +204,17 @@ export default function Dashboard() {
         try {
             setError(null);
 
-            const { error } = await taskService.updateTaskStatus(taskId, newStatus);
+            // Find the stage that matches this status
+            const stage = stages.find(s => s.name === newStatus);
 
-            if (error) throw error;
+            if (stage) {
+                const { error } = await taskService.updateTaskStage(taskId, stage.id);
+                if (error) throw error;
+            } else {
+                // Fallback to legacy status update
+                const { error } = await taskService.updateTaskStatus(taskId, newStatus);
+                if (error) throw error;
+            }
 
             // Update the tasks in state
             setTasks(prev =>
@@ -217,9 +280,12 @@ export default function Dashboard() {
 
             if (error) throw error;
 
+            // Find the "Working On" stage
+            const workingOnStage = stages.find(s => s.name === 'Working On');
+
             // Update task status to "Working On" if it's not already
-            if (task.status !== TASK_STATUS.WORKING_ON) {
-                await handleStatusChange(task.id, TASK_STATUS.WORKING_ON);
+            if (task.status !== 'Working On' && workingOnStage) {
+                await handleStatusChange(task.id, 'Working On');
             }
 
             // Set up time tracking state
@@ -312,15 +378,27 @@ export default function Dashboard() {
                     <h1 className="text-2xl font-bold text-gray-800">Today Focus</h1>
                 </div>
 
-                {/* Search input */}
-                <div className="relative">
-                    <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                    <Input
-                        placeholder="Search tasks..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-9 w-full sm:w-64"
-                    />
+                <div className="flex space-x-2">
+                    {/* Search input */}
+                    <div className="relative flex-grow">
+                        <Search className="h-4 w-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <Input
+                            placeholder="Search tasks..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-9 w-full"
+                        />
+                    </div>
+
+                    {/* Settings button */}
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => router.push('/settings')}
+                        title="Manage Stages"
+                    >
+                        <SettingsIcon className="h-4 w-4" />
+                    </Button>
                 </div>
             </div>
 
@@ -340,11 +418,11 @@ export default function Dashboard() {
                         <CardTitle className="text-sm font-medium">Completed</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{statistics.completed}</div>
+                        <div className="text-2xl font-bold">{statistics.byStatus['Completed'] || 0}</div>
                         <Progress
-                            value={statistics.total ? (statistics.completed / statistics.total) * 100 : 0}
+                            value={statistics.total ? ((statistics.byStatus['Completed'] || 0) / statistics.total) * 100 : 0}
                             className="mt-2"
-                            indicatorClassName={statistics.completed > 0 ? "bg-emerald-500" : undefined}
+                            indicatorClassName={(statistics.byStatus['Completed'] || 0) > 0 ? "bg-emerald-500" : undefined}
                         />
                     </CardContent>
                 </Card>
@@ -354,7 +432,9 @@ export default function Dashboard() {
                         <CardTitle className="text-sm font-medium">In Progress</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{statistics.inProgress + statistics.workingOn}</div>
+                        <div className="text-2xl font-bold">
+                            {(statistics.byStatus['In Progress'] || 0) + (statistics.byStatus['Working On'] || 0)}
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -363,7 +443,7 @@ export default function Dashboard() {
                         <CardTitle className="text-sm font-medium">Not Started</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{statistics.notStarted}</div>
+                        <div className="text-2xl font-bold">{statistics.byStatus['Not Started'] || 0}</div>
                     </CardContent>
                 </Card>
             </div>
@@ -404,7 +484,7 @@ export default function Dashboard() {
 
             {/* Desktop view: Kanban board */}
             <div className="hidden md:grid md:grid-cols-4 md:gap-4">
-                {columns.map(column => (
+                {columnsWithIcons.map(column => (
                     <div key={column.id} className="space-y-3">
                         <div className="flex items-center space-x-2 font-medium">
                             {column.icon}
@@ -420,7 +500,7 @@ export default function Dashboard() {
                                     <TaskCard
                                         key={task.id}
                                         task={task}
-                                        columns={columns}
+                                        columns={columnsWithIcons}
                                         onOpenTask={handleOpenTask}
                                         onStatusChange={handleStatusChange}
                                         onDelete={handleTaskDeleted}
@@ -441,9 +521,9 @@ export default function Dashboard() {
 
             {/* Mobile view: Tabs */}
             <div className="md:hidden">
-                <Tabs defaultValue="not-started">
+                <Tabs defaultValue={columnsWithIcons[0]?.id || "not-started"}>
                     <TabsList className="grid grid-cols-4">
-                        {columns.map(column => (
+                        {columnsWithIcons.map(column => (
                             <TabsTrigger
                                 key={column.id}
                                 value={column.id}
@@ -456,80 +536,20 @@ export default function Dashboard() {
                         ))}
                     </TabsList>
 
-                    {columns.map(column => (
+                    {columnsWithIcons.map(column => (
                         <TabsContent key={column.id} value={column.id} className="mt-4">
                             <ScrollArea className="h-[calc(100vh-440px)]">
                                 <div className="space-y-3">
                                     {getTasksByStatus(column.status).map((task) => (
-                                        <Card key={task.id} className="bg-white">
-                                            <CardHeader className="p-3 pb-0">
-                                                <div
-                                                    className="font-medium cursor-pointer"
-                                                    onClick={() => handleOpenTask(task)}
-                                                >
-                                                    {task.title}
-                                                </div>
-                                            </CardHeader>
-                                            <CardContent className="p-3">
-                                                {task.description && (
-                                                    <p className="text-sm text-gray-600 mt-1 line-clamp-2">
-                                                        {task.description}
-                                                    </p>
-                                                )}
-
-                                                {/* Time spent */}
-                                                {task.time_spent > 0 && (
-                                                    <div className="text-xs text-gray-500 mt-1">
-                                                        <Clock className="h-3 w-3 inline mr-1" />
-                                                        {timeTrackingService.formatTimeDuration(task.time_spent)}
-                                                    </div>
-                                                )}
-
-                                                {/* Subtasks progress */}
-                                                {task.subtasks && task.subtasks.length > 0 && (
-                                                    <div className="mt-2">
-                                                        <div className="flex justify-between items-center text-xs text-gray-500 mb-1">
-                                                            <div>Subtasks</div>
-                                                            <div>
-                                                                {task.subtasks.filter(st => st.is_completed).length}/{task.subtasks.length}
-                                                            </div>
-                                                        </div>
-                                                        <Progress
-                                                            value={subtaskService.calculateTaskCompletion(task)}
-                                                            className="h-1"
-                                                            indicatorClassName={subtaskService.calculateTaskCompletion(task) === 100 ? "bg-emerald-500" : undefined}
-                                                        />
-                                                    </div>
-                                                )}
-
-                                                <div className="flex justify-between mt-3">
-                                                    <div className="flex space-x-2">
-                                                        {columns.map(col => (
-                                                            col.status !== task.status && (
-                                                                <Button
-                                                                    key={col.id}
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    className="h-8"
-                                                                    onClick={() => handleStatusChange(task.id, col.status)}
-                                                                >
-                                                                    {col.icon}
-                                                                </Button>
-                                                            )
-                                                        ))}
-                                                    </div>
-
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-8"
-                                                        onClick={() => handleStartTimer(task)}
-                                                    >
-                                                        <Clock className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
+                                        <TaskCard
+                                            key={task.id}
+                                            task={task}
+                                            columns={columnsWithIcons}
+                                            onOpenTask={handleOpenTask}
+                                            onStatusChange={handleStatusChange}
+                                            onDelete={handleTaskDeleted}
+                                            onStartTimer={handleStartTimer}
+                                        />
                                     ))}
 
                                     {getTasksByStatus(column.status).length === 0 && (
@@ -549,7 +569,7 @@ export default function Dashboard() {
                 task={currentTask}
                 isOpen={isTaskDialogOpen}
                 onOpenChange={setIsTaskDialogOpen}
-                columns={columns}
+                columns={columnsWithIcons}
                 onTaskUpdated={handleTaskUpdated}
                 onTaskDeleted={handleTaskDeleted}
             />
