@@ -1,10 +1,7 @@
 'use client';
 
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import {
     MoreHorizontal,
-    GripVertical,
     Clock,
     CheckCircle2,
     Timer,
@@ -32,27 +29,6 @@ export default function TaskCard({
     onDelete,
     onStartTimer
 }) {
-    const {
-        attributes,
-        listeners,
-        setNodeRef,
-        transform,
-        transition,
-        isDragging
-    } = useSortable({
-        id: task.id,
-        data: {
-            type: 'task',
-            task
-        }
-    });
-
-    const style = {
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : 1,
-    };
-
     // Calculate task completion percentage
     const completionPercentage = subtaskService.calculateTaskCompletion(task);
 
@@ -73,28 +49,15 @@ export default function TaskCard({
     };
 
     return (
-        <div
-            ref={setNodeRef}
-            style={style}
-            {...attributes}
-            className="mb-3"
-        >
+        <div className="mb-3">
             <Card className={`bg-white hover:shadow-md transition-shadow ${completionPercentage === 100 ? 'border-l-4 border-l-emerald-500' : ''}`}>
                 <CardHeader className="p-3 pb-1">
                     <div className="flex justify-between items-start">
-                        <div className="flex-1 flex items-start">
-                            <div
-                                {...listeners}
-                                className="mr-2 mt-1 cursor-grab"
-                            >
-                                <GripVertical className="h-4 w-4 text-gray-400 hover:text-gray-600" />
-                            </div>
-                            <div
-                                className="font-medium cursor-pointer flex-1"
-                                onClick={() => onOpenTask(task)}
-                            >
-                                {task.title}
-                            </div>
+                        <div
+                            className="font-medium cursor-pointer flex-1"
+                            onClick={() => onOpenTask(task)}
+                        >
+                            {task.title}
                         </div>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>

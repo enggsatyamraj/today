@@ -3,18 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/auth-context';
 import {
-    DndContext,
-    PointerSensor,
-    useSensor,
-    useSensors,
-    closestCorners
-} from '@dnd-kit/core';
-import {
-    SortableContext,
-    horizontalListSortingStrategy,
-    arrayMove
-} from '@dnd-kit/sortable';
-import {
     PlusCircle,
     CheckCircle,
     Circle,
@@ -67,15 +55,6 @@ export default function Dashboard() {
 
     // Filter state
     const [searchQuery, setSearchQuery] = useState('');
-
-    // Setup sensors for drag and drop
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8, // 8px movement required to start dragging
-            },
-        })
-    );
 
     // Subscriptions reference
     const subscriptionsRef = useRef(null);
@@ -221,29 +200,6 @@ export default function Dashboard() {
         setStatistics(taskService.calculateStatistics(
             tasks.filter(task => task.id !== taskId)
         ));
-    };
-
-    // Handle drag and drop
-    const handleDragEnd = async (event) => {
-        const { active, over } = event;
-
-        // If dropped outside a droppable area
-        if (!over) return;
-
-        try {
-            // Get the target column
-            const targetColumn = columns.find(col => col.id === over.id);
-            if (!targetColumn) return;
-
-            // Get the task
-            const taskId = active.id;
-
-            // Update the task status if it's different
-            await handleStatusChange(taskId, targetColumn.status);
-        } catch (error) {
-            console.error('Error during drag and drop:', error);
-            setError('Failed to update task position.');
-        }
     };
 
     // Start time tracking
@@ -447,56 +403,40 @@ export default function Dashboard() {
             </div>
 
             {/* Desktop view: Kanban board */}
-            <div className="hidden md:block">
-                <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCorners}
-                    onDragEnd={handleDragEnd}
-                >
-                    <div className="grid grid-cols-4 gap-4">
-                        {columns.map(column => (
-                            <div key={column.id} className="space-y-3">
-                                <div className="flex items-center space-x-2 font-medium">
-                                    {column.icon}
-                                    <h3>{column.title}</h3>
-                                    <span className="text-sm text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
-                                        {getTasksByStatus(column.status).length}
-                                    </span>
-                                </div>
+            <div className="hidden md:grid md:grid-cols-4 md:gap-4">
+                {columns.map(column => (
+                    <div key={column.id} className="space-y-3">
+                        <div className="flex items-center space-x-2 font-medium">
+                            {column.icon}
+                            <h3>{column.title}</h3>
+                            <span className="text-sm text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                                {getTasksByStatus(column.status).length}
+                            </span>
+                        </div>
 
-                                <ScrollArea className="h-[calc(100vh-440px)] bg-gray-50 rounded-lg p-3">
-                                    <SortableContext
-                                        items={getTasksByStatus(column.status).map(task => task.id)}
-                                        strategy={horizontalListSortingStrategy}
-                                    >
-                                        <div
-                                            className="space-y-0 min-h-[200px]"
-                                            id={column.id}
-                                        >
-                                            {getTasksByStatus(column.status).map((task) => (
-                                                <TaskCard
-                                                    key={task.id}
-                                                    task={task}
-                                                    columns={columns}
-                                                    onOpenTask={handleOpenTask}
-                                                    onStatusChange={handleStatusChange}
-                                                    onDelete={handleTaskDeleted}
-                                                    onStartTimer={handleStartTimer}
-                                                />
-                                            ))}
+                        <ScrollArea className="h-[calc(100vh-440px)] bg-gray-50 rounded-lg p-3">
+                            <div className="space-y-3 min-h-[200px]">
+                                {getTasksByStatus(column.status).map((task) => (
+                                    <TaskCard
+                                        key={task.id}
+                                        task={task}
+                                        columns={columns}
+                                        onOpenTask={handleOpenTask}
+                                        onStatusChange={handleStatusChange}
+                                        onDelete={handleTaskDeleted}
+                                        onStartTimer={handleStartTimer}
+                                    />
+                                ))}
 
-                                            {getTasksByStatus(column.status).length === 0 && (
-                                                <div className="text-center py-8 text-gray-400 text-sm">
-                                                    No tasks in this column
-                                                </div>
-                                            )}
-                                        </div>
-                                    </SortableContext>
-                                </ScrollArea>
+                                {getTasksByStatus(column.status).length === 0 && (
+                                    <div className="text-center py-8 text-gray-400 text-sm">
+                                        No tasks in this column
+                                    </div>
+                                )}
                             </div>
-                        ))}
+                        </ScrollArea>
                     </div>
-                </DndContext>
+                ))}
             </div>
 
             {/* Mobile view: Tabs */}
