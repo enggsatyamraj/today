@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Label } from '@/components/ui/label';
 import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import AuthProtectedRoute from '@/components/auth-protected-route';
 
 export default function Login() {
     const [email, setEmail] = useState('');
@@ -50,64 +51,66 @@ export default function Login() {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-slate-50">
-            <Card className="w-full max-w-md">
-                <CardHeader>
-                    <CardTitle className="text-2xl font-bold text-center">Today Focus</CardTitle>
-                    <CardDescription className="text-center">
-                        Login to manage your daily tasks
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        {error && (
-                            <Alert variant="destructive">
-                                <AlertCircle className="h-4 w-4" />
-                                <AlertDescription>{error}</AlertDescription>
-                            </Alert>
-                        )}
+        <AuthProtectedRoute>
+            <div className="flex items-center justify-center min-h-screen bg-slate-50">
+                <Card className="w-full max-w-md">
+                    <CardHeader>
+                        <CardTitle className="text-2xl font-bold text-center">Today Focus</CardTitle>
+                        <CardDescription className="text-center">
+                            Login to manage your daily tasks
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            {error && (
+                                <Alert variant="destructive">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertDescription>{error}</AlertDescription>
+                                </Alert>
+                            )}
 
-                        <div className="space-y-2">
-                            <Label htmlFor="email">Email</Label>
-                            <Input
-                                id="email"
-                                type="email"
-                                placeholder="name@example.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                            />
-                        </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="email">Email</Label>
+                                <Input
+                                    id="email"
+                                    type="email"
+                                    placeholder="name@example.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                />
+                            </div>
 
-                        <div className="space-y-2">
-                            <Label htmlFor="password">Password</Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                placeholder="••••••••"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                            />
-                        </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="password">Password</Label>
+                                <Input
+                                    id="password"
+                                    type="password"
+                                    placeholder="••••••••"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                />
+                            </div>
 
-                        <Button type="submit" className="w-full" disabled={isLoading}>
-                            {isLoading ? 'Signing in...' : 'Sign In'}
-                        </Button>
-                    </form>
-                </CardContent>
-                <CardFooter className="flex flex-col space-y-4">
-                    <p className="text-sm text-gray-500">
-                        Don't have an account?{' '}
-                        <Link href="/signup" className="text-blue-600 hover:underline">
-                            Sign up
-                        </Link>
-                    </p>
-                    <p className="text-xs text-gray-500 text-center">
-                        By signing in, you agree to our Terms of Service and Privacy Policy.
-                    </p>
-                </CardFooter>
-            </Card>
-        </div>
+                            <Button type="submit" className="w-full" disabled={isLoading}>
+                                {isLoading ? 'Signing in...' : 'Sign In'}
+                            </Button>
+                        </form>
+                    </CardContent>
+                    <CardFooter className="flex flex-col space-y-4">
+                        <p className="text-sm text-gray-500">
+                            Don't have an account?{' '}
+                            <Link href="/signup" className="text-blue-600 hover:underline">
+                                Sign up
+                            </Link>
+                        </p>
+                        <p className="text-xs text-gray-500 text-center">
+                            By signing in, you agree to our Terms of Service and Privacy Policy.
+                        </p>
+                    </CardFooter>
+                </Card>
+            </div>
+        </AuthProtectedRoute>
     );
 }
