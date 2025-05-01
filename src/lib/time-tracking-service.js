@@ -31,12 +31,14 @@ export const timeTrackingService = {
         }
     },
 
-    // Stop time tracking
+    // Stop time tracking - removed pausedSeconds parameter since column doesn't exist
     async stopTimeTracking(timeLogId, startTime) {
         try {
             const endTime = new Date();
             const startDate = new Date(startTime);
-            const duration = Math.round((endTime - startDate) / 1000); // Duration in seconds
+
+            // Calculate duration in seconds
+            const duration = Math.round((endTime - startDate) / 1000);
 
             // Update the time log entry
             const { data, error } = await supabase
@@ -44,6 +46,7 @@ export const timeTrackingService = {
                 .update({
                     end_time: endTime.toISOString(),
                     duration: duration
+                    // Removed paused_seconds since the column doesn't exist
                 })
                 .eq('id', timeLogId)
                 .select();

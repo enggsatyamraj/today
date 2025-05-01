@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAuth } from '@/context/auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -21,7 +21,9 @@ import {
     RefreshCw,
     Calendar,
     ListChecks,
-    BarChart3
+    BarChart3,
+    AlertTriangle,
+    Pause
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -154,14 +156,23 @@ export default function Dashboard() {
         inProgress: 0,
         notStarted: 0,
         workingOn: 0,
-        byStatus: {}
+        byStatus: {},
+        overdue: 0
     });
     const [isRefreshing, setIsRefreshing] = useState(false);
 
     // Time tracking state
     const [timeTrackingTask, setTimeTrackingTask] = useState(null);
     const [isTimerRunning, setIsTimerRunning] = useState(false);
-    const [timerInterval, setTimerInterval] = useState(null);
+    const [isTimerPaused, setIsTimerPaused] = useState(false);
+    const [timerStartTime, setTimerStartTime] = useState(null);
+    const [pausedTime, setPausedTime] = useState(0);
+    const [timeTracking, setTimeTracking] = useState({
+        timeLogId: null,
+        startTime: null,
+        pauseStartTime: null,
+        totalPausedTime: 0
+    });
 
     // Stage management state
     const [isAddStageDialogOpen, setIsAddStageDialogOpen] = useState(false);
@@ -177,6 +188,10 @@ export default function Dashboard() {
     const columnsContainerRef = useRef(null);
     const [canScrollLeft, setCanScrollLeft] = useState(false);
     const [canScrollRight, setCanScrollRight] = useState(false);
+
+    // Due date notification
+    const [showDueWarning, setShowDueWarning] = useState(false);
+    const [overdueTasks, setOverdueTasks] = useState([]);
 
     // Subscriptions reference
     const subscriptionsRef = useRef(null);
@@ -234,6 +249,26 @@ export default function Dashboard() {
         }
     }, [columnsWithIcons, isLoading]);
 
+    // Check for overdue tasks
+    useEffect(() => {
+        const overdue = tasks.filter(task =>
+            task.due_date &&
+            new Date(task.due_date) < new Date() &&
+            task.status !== 'Completed'
+        );
+
+        setOverdueTasks(overdue);
+        setShowDueWarning(overdue.length > 0);
+
+        // Update statistics
+        if (statistics) {
+            setStatistics(prev => ({
+                ...prev,
+                overdue: overdue.length
+            }));
+        }
+    }, [tasks]);
+
     // Scroll columns
     const scrollColumns = (direction) => {
         if (columnsContainerRef.current) {
@@ -246,18 +281,24 @@ export default function Dashboard() {
         }
     };
 
-    // Handle refresh
-    const handleRefresh = async () => {
+    // Handle refresh - prevent unnecessary re-renders
+    const handleRefresh = useCallback(async () => {
         if (isRefreshing) return;
 
         setIsRefreshing(true);
-        await fetchStages();
-        await fetchTasks();
-        setIsRefreshing(false);
-    };
+        try {
+            await fetchStages();
+            await fetchTasks();
+        } catch (error) {
+            console.error('Error refreshing data:', error);
+            setError('Failed to refresh data. Please try again.');
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [isRefreshing]);
 
     // Fetch stages
-    const fetchStages = async () => {
+    const fetchStages = useCallback(async () => {
         if (!user) return;
 
         try {
@@ -275,11 +316,12 @@ export default function Dashboard() {
             }
         } catch (error) {
             console.error('Error fetching stages:', error);
+            setError('Failed to load task stages. Please try refreshing.');
         }
-    };
+    }, [user]);
 
     // Fetch tasks
-    const fetchTasks = async () => {
+    const fetchTasks = useCallback(async () => {
         if (!user) return;
 
         try {
@@ -300,7 +342,7 @@ export default function Dashboard() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [user]);
 
     // Setup data fetching and subscriptions
     useEffect(() => {
@@ -317,13 +359,8 @@ export default function Dashboard() {
             if (subscriptionsRef.current) {
                 subscriptionUtils.removeSubscriptions(subscriptionsRef.current);
             }
-
-            // Also clear any timer intervals
-            if (timerInterval) {
-                clearInterval(timerInterval);
-            }
         };
-    }, [user]);
+    }, [user, fetchStages, fetchTasks]);
 
     // Add a new task
     const handleAddTask = async () => {
@@ -337,14 +374,36 @@ export default function Dashboard() {
             const firstStage = stages.length > 0 ? stages[0] : null;
             const stageId = firstStage ? firstStage.id : null;
 
-            const { error } = await taskService.addTask(user.id, newTaskTitle.trim(), stageId);
+            const { data, error } = await taskService.addTask(user.id, newTaskTitle.trim(), stageId);
 
             if (error) throw error;
 
-            setNewTaskTitle('');
+            // Optimistically add the task to the state to avoid a full refetch
+            if (data && data[0]) {
+                const newTask = {
+                    ...data[0],
+                    status: firstStage ? firstStage.name : 'Not Started',
+                    subtasks: []
+                };
 
-            // Fetch updated tasks
-            await fetchTasks();
+                setTasks(prevTasks => [newTask, ...prevTasks]);
+
+                // Update statistics
+                setStatistics(prev => ({
+                    ...prev,
+                    total: prev.total + 1,
+                    notStarted: prev.notStarted + 1,
+                    byStatus: {
+                        ...prev.byStatus,
+                        'Not Started': (prev.byStatus['Not Started'] || 0) + 1
+                    }
+                }));
+            } else {
+                // If we don't have the data, fall back to a full refetch
+                await fetchTasks();
+            }
+
+            setNewTaskTitle('');
         } catch (error) {
             console.error('Error adding task:', error);
             setError('Failed to add task. Please try again.');
@@ -465,19 +524,13 @@ export default function Dashboard() {
         try {
             setError(null);
 
-            // Find the stage that matches this status
-            const stage = stages.find(s => s.name === newStatus);
+            // Get the task being updated
+            const taskToUpdate = tasks.find(task => task.id === taskId);
+            if (!taskToUpdate) return;
 
-            if (stage) {
-                const { error } = await taskService.updateTaskStage(taskId, stage.id);
-                if (error) throw error;
-            } else {
-                // Fallback to legacy status update
-                const { error } = await taskService.updateTaskStatus(taskId, newStatus);
-                if (error) throw error;
-            }
+            const oldStatus = taskToUpdate.status;
 
-            // Update the tasks in state
+            // Optimistically update UI
             setTasks(prev =>
                 prev.map(task =>
                     task.id === taskId ? { ...task, status: newStatus } : task
@@ -492,13 +545,77 @@ export default function Dashboard() {
                 });
             }
 
-            // Recalculate statistics
-            setStatistics(taskService.calculateStatistics(
-                tasks.map(task => task.id === taskId ? { ...task, status: newStatus } : task)
-            ));
+            // Update statistics immediately for responsive UI
+            setStatistics(prev => {
+                const updatedStats = { ...prev };
+                const byStatus = { ...updatedStats.byStatus };
+
+                // Decrement old status count
+                if (byStatus[oldStatus]) {
+                    byStatus[oldStatus] = Math.max(0, byStatus[oldStatus] - 1);
+                }
+
+                // Increment new status count
+                byStatus[newStatus] = (byStatus[newStatus] || 0) + 1;
+
+                // Update specific counters
+                if (oldStatus === 'Completed' && newStatus !== 'Completed') {
+                    updatedStats.completed = Math.max(0, updatedStats.completed - 1);
+
+                    // If the task has a due date that's in the past, increment overdue
+                    if (taskToUpdate.due_date && new Date(taskToUpdate.due_date) < new Date()) {
+                        updatedStats.overdue = updatedStats.overdue + 1;
+                    }
+                } else if (oldStatus !== 'Completed' && newStatus === 'Completed') {
+                    updatedStats.completed = updatedStats.completed + 1;
+
+                    // If the task was overdue, decrement that counter
+                    if (taskToUpdate.due_date && new Date(taskToUpdate.due_date) < new Date()) {
+                        updatedStats.overdue = Math.max(0, updatedStats.overdue - 1);
+                    }
+                }
+
+                if (oldStatus === 'In Progress' && newStatus !== 'In Progress') {
+                    updatedStats.inProgress = Math.max(0, updatedStats.inProgress - 1);
+                } else if (oldStatus !== 'In Progress' && newStatus === 'In Progress') {
+                    updatedStats.inProgress = updatedStats.inProgress + 1;
+                }
+
+                if (oldStatus === 'Not Started' && newStatus !== 'Not Started') {
+                    updatedStats.notStarted = Math.max(0, updatedStats.notStarted - 1);
+                } else if (oldStatus !== 'Not Started' && newStatus === 'Not Started') {
+                    updatedStats.notStarted = updatedStats.notStarted + 1;
+                }
+
+                if (oldStatus === 'Working On' && newStatus !== 'Working On') {
+                    updatedStats.workingOn = Math.max(0, updatedStats.workingOn - 1);
+                } else if (oldStatus !== 'Working On' && newStatus === 'Working On') {
+                    updatedStats.workingOn = updatedStats.workingOn + 1;
+                }
+
+                updatedStats.byStatus = byStatus;
+
+                return updatedStats;
+            });
+
+            // Actually update in the database
+            // Find the stage that matches this status
+            const stage = stages.find(s => s.name === newStatus);
+
+            if (stage) {
+                const { error } = await taskService.updateTaskStage(taskId, stage.id);
+                if (error) throw error;
+            } else {
+                // Fallback to legacy status update
+                const { error } = await taskService.updateTaskStatus(taskId, newStatus);
+                if (error) throw error;
+            }
         } catch (error) {
             console.error('Error updating task status:', error);
             setError('Failed to update task status.');
+
+            // If there was an error, refresh the tasks to restore the correct state
+            await fetchTasks();
         }
     };
 
@@ -517,13 +634,61 @@ export default function Dashboard() {
     };
 
     // Handle task deletion
-    const handleTaskDeleted = (taskId) => {
-        setTasks(prev => prev.filter(task => task.id !== taskId));
+    const handleTaskDeleted = async (taskId) => {
+        try {
+            // First, get the task being deleted for statistics update
+            const taskToDelete = tasks.find(task => task.id === taskId);
 
-        // Recalculate statistics
-        setStatistics(taskService.calculateStatistics(
-            tasks.filter(task => task.id !== taskId)
-        ));
+            // Optimistically update the UI
+            setTasks(prev => prev.filter(task => task.id !== taskId));
+
+            // Recalculate statistics
+            if (taskToDelete) {
+                setStatistics(prev => {
+                    const status = taskToDelete.status || 'Not Started';
+                    const updatedStats = { ...prev };
+
+                    // Decrement total
+                    updatedStats.total = Math.max(0, updatedStats.total - 1);
+
+                    // Decrement specific status count
+                    if (updatedStats.byStatus[status]) {
+                        updatedStats.byStatus[status] = Math.max(0, updatedStats.byStatus[status] - 1);
+                    }
+
+                    // Update specific counters
+                    if (status === 'Completed') {
+                        updatedStats.completed = Math.max(0, updatedStats.completed - 1);
+                    } else if (status === 'In Progress') {
+                        updatedStats.inProgress = Math.max(0, updatedStats.inProgress - 1);
+                    } else if (status === 'Not Started') {
+                        updatedStats.notStarted = Math.max(0, updatedStats.notStarted - 1);
+                    } else if (status === 'Working On') {
+                        updatedStats.workingOn = Math.max(0, updatedStats.workingOn - 1);
+                    }
+
+                    // If the task was overdue, decrement that counter too
+                    if (taskToDelete.due_date && new Date(taskToDelete.due_date) < new Date() && status !== 'Completed') {
+                        updatedStats.overdue = Math.max(0, updatedStats.overdue - 1);
+                    }
+
+                    return updatedStats;
+                });
+            }
+
+            // Actually delete the task from the database
+            const { error } = await taskService.deleteTask(taskId);
+
+            if (error) {
+                throw error;
+            }
+        } catch (error) {
+            console.error('Error deleting task:', error);
+            setError('Failed to delete task. Please try again.');
+
+            // If there was an error, refresh the tasks to restore the correct state
+            await fetchTasks();
+        }
     };
 
     // Start time tracking
@@ -556,17 +721,69 @@ export default function Dashboard() {
                 startTime: data.startTime
             });
             setIsTimerRunning(true);
+            setIsTimerPaused(false);
+            setTimerStartTime(new Date());
+            setPausedTime(0);
 
-            // Start the timer interval
-            const interval = setInterval(() => {
-                // This is just to keep the timer active, but we don't need to update elapsed time
-                // since we're displaying current time instead of elapsed time
-            }, 1000);
-
-            setTimerInterval(interval);
+            // Reset time tracking state
+            setTimeTracking({
+                timeLogId: data.timeLogId,
+                startTime: data.startTime,
+                pauseStartTime: null,
+                totalPausedTime: 0
+            });
         } catch (error) {
             console.error('Error starting timer:', error);
             setError('Failed to start timer.');
+        }
+    };
+
+    // Pause time tracking
+    const handlePauseTimer = async () => {
+        if (!isTimerRunning || !timeTrackingTask || isTimerPaused) return;
+
+        try {
+            setError(null);
+            setIsTimerPaused(true);
+
+            // Record when we paused
+            const pauseTime = new Date();
+
+            // Update time tracking
+            setTimeTracking(prev => ({
+                ...prev,
+                pauseStartTime: pauseTime.toISOString()
+            }));
+
+        } catch (error) {
+            console.error('Error pausing timer:', error);
+            setError('Failed to pause timer.');
+        }
+    };
+
+    // Resume time tracking
+    const handleResumeTimer = async () => {
+        if (!isTimerRunning || !timeTrackingTask || !isTimerPaused) return;
+
+        try {
+            setError(null);
+            setIsTimerPaused(false);
+
+            // Calculate time spent in pause
+            const pauseStart = new Date(timeTracking.pauseStartTime);
+            const pauseEnd = new Date();
+            const pauseDuration = Math.round((pauseEnd - pauseStart) / 1000); // seconds
+
+            // Update paused time
+            setTimeTracking(prev => ({
+                ...prev,
+                pauseStartTime: null,
+                totalPausedTime: prev.totalPausedTime + pauseDuration
+            }));
+
+        } catch (error) {
+            console.error('Error resuming timer:', error);
+            setError('Failed to resume timer.');
         }
     };
 
@@ -577,13 +794,7 @@ export default function Dashboard() {
         try {
             setError(null);
 
-            // Clear the interval
-            if (timerInterval) {
-                clearInterval(timerInterval);
-                setTimerInterval(null);
-            }
-
-            // Stop time tracking
+            // Stop time tracking - removing the paused time parameter since the column doesn't exist
             const { data, error } = await timeTrackingService.stopTimeTracking(
                 timeTrackingTask.timeLogId,
                 timeTrackingTask.startTime
@@ -597,6 +808,15 @@ export default function Dashboard() {
             // Reset time tracking state
             setTimeTrackingTask(null);
             setIsTimerRunning(false);
+            setIsTimerPaused(false);
+            setTimerStartTime(null);
+            setPausedTime(0);
+            setTimeTracking({
+                timeLogId: null,
+                startTime: null,
+                pauseStartTime: null,
+                totalPausedTime: 0
+            });
 
             // Fetch updated tasks to get the new time_spent value
             await fetchTasks();
@@ -683,22 +903,32 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-6">
-            {/* Header with gradient background */}
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 -mx-4 -mt-6 px-4 py-6 mb-8 rounded-b-3xl shadow-md">
+            {/* Header with urgent gradient background */}
+            <div className={`bg-gradient-to-r ${showDueWarning ? 'from-red-600 to-amber-500' : 'from-blue-600 to-indigo-700'} -mx-4 -mt-6 px-4 py-6 mb-8 rounded-b-3xl shadow-md transition-colors duration-300`}>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2">
                     <div className="flex items-center mb-4 sm:mb-0">
-                        <div className="bg-white text-blue-600 p-2 rounded-xl shadow-md mr-3">
-                            <LayoutDashboard className="h-6 w-6" />
+                        <div className={`${showDueWarning ? 'bg-red-50 text-red-600' : 'bg-white text-blue-600'} p-2 rounded-xl shadow-md mr-3 transition-colors duration-300`}>
+                            {showDueWarning ? (
+                                <AlertTriangle className="h-6 w-6" />
+                            ) : (
+                                <LayoutDashboard className="h-6 w-6" />
+                            )}
                         </div>
                         <div>
                             <h1 className="text-2xl font-bold text-white">Today Focus</h1>
-                            <p className="text-blue-100 text-sm">
+                            <p className="text-blue-100 text-sm flex items-center">
                                 {new Date().toLocaleDateString('en-US', {
                                     weekday: 'long',
                                     year: 'numeric',
                                     month: 'long',
                                     day: 'numeric'
                                 })}
+                                {showDueWarning && (
+                                    <span className="ml-2 bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-xs font-medium flex items-center">
+                                        <AlertTriangle className="h-3 w-3 mr-1" />
+                                        {overdueTasks.length} overdue task{overdueTasks.length !== 1 ? 's' : ''}
+                                    </span>
+                                )}
                             </p>
                         </div>
                     </div>
@@ -768,6 +998,24 @@ export default function Dashboard() {
                 </div>
             </div>
 
+            {/* Overdue tasks warning */}
+            {showDueWarning && (
+                <Alert variant="destructive" className="bg-red-50 border-red-200 text-red-800 animate-pulse">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription className="flex items-center justify-between">
+                        <span>You have {overdueTasks.length} overdue task{overdueTasks.length !== 1 ? 's' : ''}. Please prioritize these items!</span>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-2 text-red-600 border-red-200 hover:bg-red-100 hover:text-red-700"
+                            onClick={() => setShowDueWarning(false)}
+                        >
+                            Dismiss
+                        </Button>
+                    </AlertDescription>
+                </Alert>
+            )}
+
             {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card className="bg-gradient-to-br from-violet-50 to-violet-100 border-none shadow-md hover:shadow-lg transition-shadow overflow-hidden">
@@ -818,17 +1066,25 @@ export default function Dashboard() {
                     </CardContent>
                 </Card>
 
-                <Card className="bg-gradient-to-br from-amber-50 to-amber-100 border-none shadow-md hover:shadow-lg transition-shadow overflow-hidden">
-                    <div className="absolute right-0 top-0 w-16 h-16 bg-amber-200 rounded-full -mt-6 -mr-6 opacity-40"></div>
+                <Card className={`${statistics.overdue > 0 ? 'bg-gradient-to-br from-red-50 to-red-100' : 'bg-gradient-to-br from-amber-50 to-amber-100'} border-none shadow-md hover:shadow-lg transition-shadow overflow-hidden`}>
+                    <div className={`absolute right-0 top-0 w-16 h-16 ${statistics.overdue > 0 ? 'bg-red-200' : 'bg-amber-200'} rounded-full -mt-6 -mr-6 opacity-40`}></div>
                     <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-amber-800 flex items-center">
-                            <Circle className="h-4 w-4 mr-2 text-amber-700" />
-                            Not Started
+                        <CardTitle className={`text-sm font-medium ${statistics.overdue > 0 ? 'text-red-800' : 'text-amber-800'} flex items-center`}>
+                            {statistics.overdue > 0 ? (
+                                <AlertTriangle className="h-4 w-4 mr-2 text-red-600" />
+                            ) : (
+                                <Circle className="h-4 w-4 mr-2 text-amber-700" />
+                            )}
+                            {statistics.overdue > 0 ? 'Overdue' : 'Not Started'}
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-bold text-amber-900">{statistics.byStatus['Not Started'] || 0}</div>
-                        <p className="text-xs text-amber-700 mt-1">Waiting to begin</p>
+                        <div className={`text-3xl font-bold ${statistics.overdue > 0 ? 'text-red-900' : 'text-amber-900'}`}>
+                            {statistics.overdue > 0 ? statistics.overdue : (statistics.byStatus['Not Started'] || 0)}
+                        </div>
+                        <p className={`text-xs ${statistics.overdue > 0 ? 'text-red-700' : 'text-amber-700'} mt-1`}>
+                            {statistics.overdue > 0 ? 'Need immediate attention!' : 'Waiting to begin'}
+                        </p>
                     </CardContent>
                 </Card>
             </div>
@@ -837,7 +1093,10 @@ export default function Dashboard() {
             <Timer
                 task={timeTrackingTask}
                 isRunning={isTimerRunning}
+                isPaused={isTimerPaused}
                 onStop={handleStopTimer}
+                onPause={handlePauseTimer}
+                onResume={handleResumeTimer}
             />
 
             {/* Error display */}
@@ -870,7 +1129,7 @@ export default function Dashboard() {
                     <Button
                         onClick={handleAddTask}
                         disabled={isAddingTask || !newTaskTitle.trim()}
-                        className="bg-blue-600 hover:bg-blue-700"
+                        className={`${showDueWarning ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                     >
                         <PlusCircle className="h-4 w-4 mr-2" />
                         Add
@@ -1126,7 +1385,6 @@ export default function Dashboard() {
                     ))}
                 </Tabs>
             </div>
-
             {/* Task Dialog */}
             <TaskDialog
                 task={currentTask}
