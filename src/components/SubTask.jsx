@@ -42,18 +42,20 @@ export default function Subtask({ subtask, onUpdate, onDelete }) {
     };
 
     return (
-        <div className={`flex items-center justify-between py-1 px-2 rounded-sm ${isCompleted ? 'bg-emerald-50' : 'hover:bg-gray-100'}`}>
-            <div className="flex items-center space-x-2 flex-1 min-w-0">
-                <Checkbox
-                    id={`subtask-${subtask.id}`}
-                    checked={isCompleted}
-                    onCheckedChange={handleToggle}
-                    disabled={isUpdating}
-                    className={isCompleted ? "text-emerald-500 border-emerald-500" : ""}
-                />
+        <div className={`flex items-center justify-between py-1 px-2 rounded-sm group ${isCompleted ? 'bg-emerald-50' : 'hover:bg-gray-100'}`}>
+            <div className="flex min-w-0 overflow-hidden">
+                <div className="flex-shrink-0">
+                    <Checkbox
+                        id={`subtask-${subtask.id}`}
+                        checked={isCompleted}
+                        onCheckedChange={handleToggle}
+                        disabled={isUpdating}
+                        className={`${isCompleted ? "text-emerald-500 border-emerald-500" : ""}`}
+                    />
+                </div>
                 <label
                     htmlFor={`subtask-${subtask.id}`}
-                    className={`text-sm truncate ${isCompleted ? 'line-through text-gray-500' : 'text-gray-700'}`}
+                    className={`text-sm ml-2 flex-1 break-words ${isCompleted ? 'line-through text-gray-500' : 'text-gray-700'}`}
                 >
                     {subtask.title}
                 </label>
@@ -62,8 +64,9 @@ export default function Subtask({ subtask, onUpdate, onDelete }) {
             <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                className="h-6 w-6 p-0 flex-shrink-0 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 focus:opacity-100"
                 onClick={handleDelete}
+                title="Delete subtask"
             >
                 <Trash2 className="h-4 w-4" />
             </Button>

@@ -227,8 +227,8 @@ export default function TaskDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
-                <DialogHeader>
+            <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+                <DialogHeader className="flex-shrink-0">
                     <div className="mb-2">
                         <Input
                             value={title}
@@ -258,7 +258,7 @@ export default function TaskDialog({
                     </div>
                 </DialogHeader>
 
-                <div className="space-y-4 py-4">
+                <div className="space-y-4 py-4 flex-grow overflow-y-auto hide-scrollbar">
                     <div className="space-y-2">
                         <label className="text-sm font-medium flex items-center text-gray-700">
                             <InfoIcon className="h-4 w-4 mr-1" />
@@ -268,7 +268,7 @@ export default function TaskDialog({
                             placeholder="Add a description..."
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            rows={4}
+                            rows={3}
                             className="resize-none"
                         />
                     </div>
@@ -309,17 +309,19 @@ export default function TaskDialog({
                             </Button>
                         </div>
 
-                        {/* Subtasks list */}
+                        {/* Subtasks list - improved scrollable container */}
                         {currentTaskState?.subtasks && currentTaskState.subtasks.length > 0 && (
-                            <div className="space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-2 bg-gray-50">
-                                {currentTaskState.subtasks.map(subtask => (
-                                    <Subtask
-                                        key={subtask.id}
-                                        subtask={subtask}
-                                        onUpdate={handleSubtaskUpdate}
-                                        onDelete={handleSubtaskDelete}
-                                    />
-                                ))}
+                            <div className="border rounded-md p-2 bg-gray-50 overflow-y-auto hide-scrollbar" style={{ maxHeight: '35vh' }}>
+                                <div className="space-y-2">
+                                    {currentTaskState.subtasks.map(subtask => (
+                                        <Subtask
+                                            key={subtask.id}
+                                            subtask={subtask}
+                                            onUpdate={handleSubtaskUpdate}
+                                            onDelete={handleSubtaskDelete}
+                                        />
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -343,7 +345,7 @@ export default function TaskDialog({
                     </div>
                 </div>
 
-                <DialogFooter className="flex justify-between items-center sm:justify-between">
+                <DialogFooter className="flex justify-between items-center sm:justify-between flex-shrink-0">
                     <Button
                         variant="outline"
                         className="text-red-600 hover:text-red-700 hover:bg-red-50"
