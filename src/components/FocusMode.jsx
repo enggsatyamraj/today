@@ -72,14 +72,14 @@ export default function FocusMode({
                     <div className="text-2xl font-mono">
                         {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
-                    <Button
+                    {/* <Button
                         variant="ghost"
                         size="icon"
                         className="text-white duration-300 cursor-pointer rounded-full"
                         onClick={onClose}
                     >
                         <X className="h-5 w-5" />
-                    </Button>
+                    </Button> */}
                 </div>
             </div>
 
@@ -160,10 +160,10 @@ export default function FocusMode({
                             <div className="mb-1 w-full h-3 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
                                 <div
                                     className={`h-full rounded-full ${completionPercentage === 100
-                                            ? "bg-green-400"
-                                            : completionPercentage > 50
-                                                ? "bg-blue-400"
-                                                : "bg-amber-400"
+                                        ? "bg-green-400"
+                                        : completionPercentage > 50
+                                            ? "bg-blue-400"
+                                            : "bg-amber-400"
                                         }`}
                                     style={{ width: `${completionPercentage}%` }}
                                 ></div>
