@@ -689,6 +689,60 @@ export default function Dashboard() {
     const [isFocusModeActive, setIsFocusModeActive] = useState(false);
     const [elapsedTime, setElapsedTime] = useState(0);
 
+    const saveTimerState = (state) => {
+        try {
+            localStorage.setItem('timerState', JSON.stringify(state));
+        } catch (error) {
+            console.error('Error saving timer state to localStorage:', error);
+        }
+    };
+
+    const loadTimerState = () => {
+        try {
+            const savedState = localStorage.getItem('timerState');
+            return savedState ? JSON.parse(savedState) : null;
+        } catch (error) {
+            console.error('Error loading timer state from localStorage:', error);
+            return null;
+        }
+    };
+
+    useEffect(() => {
+        const savedState = loadTimerState();
+        if (savedState) {
+            // Restore timer state
+            setTimeTrackingTask(savedState.timeTrackingTask);
+            setIsTimerRunning(savedState.isTimerRunning);
+            setIsTimerPaused(savedState.isTimerPaused);
+            setTimerStartTime(savedState.timerStartTime);
+            setPausedTime(savedState.pausedTime);
+            setTimeTracking(savedState.timeTracking);
+            setIsFocusModeActive(savedState.isFocusModeActive);
+
+            // Recalculate elapsed time based on saved state
+            if (savedState.isTimerRunning) {
+                const now = new Date();
+                const startTime = new Date(savedState.timerStartTime);
+                let totalElapsed = Math.floor((now - startTime) / 1000);
+
+                // Subtract paused time
+                if (savedState.isTimerPaused) {
+                    // If it was paused when the page was refreshed
+                    if (savedState.timeTracking.pauseStartTime) {
+                        const pauseStart = new Date(savedState.timeTracking.pauseStartTime);
+                        const pauseDuration = Math.floor((now - pauseStart) / 1000);
+                        totalElapsed -= pauseDuration;
+                    }
+                }
+
+                // Also subtract accumulated paused time
+                totalElapsed -= savedState.timeTracking.totalPausedTime || 0;
+
+                setElapsedTime(totalElapsed);
+            }
+        }
+    }, []);
+
     useEffect(() => {
         let timerInterval;
 
@@ -727,7 +781,6 @@ export default function Dashboard() {
         };
     }, [isTimerRunning, isTimerPaused, timerStartTime, timeTracking, timeTrackingTask]);
 
-    // Start time tracking
     const handleStartTimer = async (task) => {
         try {
             setError(null);
@@ -750,34 +803,49 @@ export default function Dashboard() {
                 await handleStatusChange(task.id, 'In Progress');
             }
 
-            // Set up time tracking state
-            setTimeTrackingTask({
+            const newTimeTrackingTask = {
                 ...task,
                 timeLogId: data.timeLogId,
                 startTime: data.startTime
-            });
+            };
+
+            // Set up time tracking state
+            setTimeTrackingTask(newTimeTrackingTask);
             setIsTimerRunning(true);
             setIsTimerPaused(false);
             setTimerStartTime(new Date());
             setPausedTime(0);
 
             // Reset time tracking state
-            setTimeTracking({
+            const newTimeTracking = {
                 timeLogId: data.timeLogId,
                 startTime: data.startTime,
                 pauseStartTime: null,
                 totalPausedTime: 0
-            });
+            };
+
+            setTimeTracking(newTimeTracking);
 
             // Activate focus mode
             setIsFocusModeActive(true);
+
+            // Save to localStorage
+            saveTimerState({
+                timeTrackingTask: newTimeTrackingTask,
+                isTimerRunning: true,
+                isTimerPaused: false,
+                timerStartTime: new Date(),
+                pausedTime: 0,
+                timeTracking: newTimeTracking,
+                isFocusModeActive: true
+            });
         } catch (error) {
             console.error('Error starting timer:', error);
             setError('Failed to start timer.');
         }
     };
 
-    // Pause time tracking
+    // Update handlePauseTimer
     const handlePauseTimer = async () => {
         if (!isTimerRunning || !timeTrackingTask || isTimerPaused) return;
 
@@ -789,18 +857,30 @@ export default function Dashboard() {
             const pauseTime = new Date();
 
             // Update time tracking
-            setTimeTracking(prev => ({
-                ...prev,
+            const updatedTimeTracking = {
+                ...timeTracking,
                 pauseStartTime: pauseTime.toISOString()
-            }));
+            };
 
+            setTimeTracking(updatedTimeTracking);
+
+            // Save to localStorage
+            saveTimerState({
+                timeTrackingTask,
+                isTimerRunning,
+                isTimerPaused: true,
+                timerStartTime,
+                pausedTime,
+                timeTracking: updatedTimeTracking,
+                isFocusModeActive
+            });
         } catch (error) {
             console.error('Error pausing timer:', error);
             setError('Failed to pause timer.');
         }
     };
 
-    // Resume time tracking
+    // Update handleResumeTimer
     const handleResumeTimer = async () => {
         if (!isTimerRunning || !timeTrackingTask || !isTimerPaused) return;
 
@@ -814,19 +894,31 @@ export default function Dashboard() {
             const pauseDuration = Math.round((pauseEnd - pauseStart) / 1000); // seconds
 
             // Update paused time
-            setTimeTracking(prev => ({
-                ...prev,
+            const updatedTimeTracking = {
+                ...timeTracking,
                 pauseStartTime: null,
-                totalPausedTime: prev.totalPausedTime + pauseDuration
-            }));
+                totalPausedTime: timeTracking.totalPausedTime + pauseDuration
+            };
 
+            setTimeTracking(updatedTimeTracking);
+
+            // Save to localStorage
+            saveTimerState({
+                timeTrackingTask,
+                isTimerRunning,
+                isTimerPaused: false,
+                timerStartTime,
+                pausedTime,
+                timeTracking: updatedTimeTracking,
+                isFocusModeActive
+            });
         } catch (error) {
             console.error('Error resuming timer:', error);
             setError('Failed to resume timer.');
         }
     };
 
-    // Stop time tracking
+    // Update handleStopTimer
     const handleStopTimer = async () => {
         if (!isTimerRunning || !timeTrackingTask) return;
 
@@ -860,6 +952,9 @@ export default function Dashboard() {
 
             // Exit focus mode
             setIsFocusModeActive(false);
+
+            // Clear localStorage
+            localStorage.removeItem('timerState');
 
             // Fetch updated tasks to get the new time_spent value
             await fetchTasks();
