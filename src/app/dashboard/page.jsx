@@ -68,6 +68,7 @@ import subscriptionUtils from '@/lib/subscription-utils';
 import TaskCard from '@/components/TaskCard';
 import TaskDialog from '@/components/TaskDialog';
 import Timer from '@/components/Timer';
+import FocusMode from '@/components/FocusMode';
 
 // Map of icon names to components
 const iconComponents = {
@@ -685,6 +686,47 @@ export default function Dashboard() {
         }
     };
 
+    const [isFocusModeActive, setIsFocusModeActive] = useState(false);
+    const [elapsedTime, setElapsedTime] = useState(0);
+
+    useEffect(() => {
+        let timerInterval;
+
+        if (isTimerRunning && timeTrackingTask) {
+            // Start or resume a timer that updates elapsedTime every second
+            timerInterval = setInterval(() => {
+                if (timerStartTime) {
+                    const now = new Date();
+                    const startTime = new Date(timerStartTime);
+
+                    // Calculate total elapsed time in seconds
+                    let totalElapsed = Math.floor((now - startTime) / 1000);
+
+                    // Subtract paused time
+                    if (isTimerPaused) {
+                        // If currently paused, don't count time since pause started
+                        if (timeTracking.pauseStartTime) {
+                            const pauseStart = new Date(timeTracking.pauseStartTime);
+                            const pauseDuration = Math.floor((now - pauseStart) / 1000);
+                            totalElapsed -= pauseDuration;
+                        }
+                    }
+
+                    // Also subtract any previously accumulated paused time
+                    totalElapsed -= timeTracking.totalPausedTime || 0;
+
+                    setElapsedTime(totalElapsed);
+                }
+            }, 1000);
+        }
+
+        return () => {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+            }
+        };
+    }, [isTimerRunning, isTimerPaused, timerStartTime, timeTracking, timeTrackingTask]);
+
     // Start time tracking
     const handleStartTimer = async (task) => {
         try {
@@ -726,6 +768,9 @@ export default function Dashboard() {
                 pauseStartTime: null,
                 totalPausedTime: 0
             });
+
+            // Activate focus mode
+            setIsFocusModeActive(true);
         } catch (error) {
             console.error('Error starting timer:', error);
             setError('Failed to start timer.');
@@ -788,7 +833,7 @@ export default function Dashboard() {
         try {
             setError(null);
 
-            // Stop time tracking - removing the paused time parameter since the column doesn't exist
+            // Stop time tracking
             const { data, error } = await timeTrackingService.stopTimeTracking(
                 timeTrackingTask.timeLogId,
                 timeTrackingTask.startTime
@@ -805,12 +850,16 @@ export default function Dashboard() {
             setIsTimerPaused(false);
             setTimerStartTime(null);
             setPausedTime(0);
+            setElapsedTime(0); // Reset elapsed time
             setTimeTracking({
                 timeLogId: null,
                 startTime: null,
                 pauseStartTime: null,
                 totalPausedTime: 0
             });
+
+            // Exit focus mode
+            setIsFocusModeActive(false);
 
             // Fetch updated tasks to get the new time_spent value
             await fetchTasks();
@@ -819,6 +868,40 @@ export default function Dashboard() {
             setError('Failed to stop timer.');
         }
     };
+
+    // Handle subtask update in focus mode
+    const handleFocusModeSubtaskUpdate = async (subtaskId, isCompleted) => {
+        try {
+            // Update in database
+            const { error } = await subtaskService.updateSubtaskStatus(subtaskId, isCompleted);
+
+            if (error) throw error;
+
+            // Update the current task's subtasks
+            if (timeTrackingTask && timeTrackingTask.subtasks) {
+                const updatedSubtasks = timeTrackingTask.subtasks.map(subtask =>
+                    subtask.id === subtaskId ? { ...subtask, is_completed: isCompleted } : subtask
+                );
+
+                const updatedTask = {
+                    ...timeTrackingTask,
+                    subtasks: updatedSubtasks
+                };
+
+                setTimeTrackingTask(updatedTask);
+
+                // Update the tasks array for when focus mode is closed
+                setTasks(prev =>
+                    prev.map(task =>
+                        task.id === updatedTask.id ? updatedTask : task
+                    )
+                );
+            }
+        } catch (error) {
+            console.error('Error updating subtask:', error);
+        }
+    };
+
 
     // Get tasks by status
     const getTasksByStatus = (status) => {
@@ -992,6 +1075,41 @@ export default function Dashboard() {
                 </div>
             </div>
 
+            {/* Stage Management Actions */}
+            {isManagingStages && (
+                <div className="flex items-center justify-between bg-gradient-to-r from-blue-100 to-indigo-100 p-4 rounded-xl shadow-md mb-4">
+                    <div className="flex items-center">
+                        <div className="bg-blue-600 text-white p-2 rounded-lg shadow-sm mr-3">
+                            <Layers className="h-4 w-4" />
+                        </div>
+                        <div>
+                            <h3 className="font-medium text-blue-800">Stage Management Mode</h3>
+                            <p className="text-sm text-blue-600">Customize your workflow stages</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => setIsAddStageDialogOpen(true)}
+                            className="bg-blue-600 hover:bg-blue-700"
+                        >
+                            <PlusCircle className="h-4 w-4 mr-1" />
+                            Add Stage
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsManagingStages(false)}
+                            className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                        >
+                            <X className="h-4 w-4 mr-1" />
+                            Exit
+                        </Button>
+                    </div>
+                </div>
+            )}
+
             {/* Overdue tasks warning */}
             {showDueWarning && (
                 <Alert variant="destructive" className="bg-red-50 border-red-200 text-red-800 animate-pulse">
@@ -1084,14 +1202,31 @@ export default function Dashboard() {
             </div>
 
             {/* Timer component */}
-            <Timer
-                task={timeTrackingTask}
-                isRunning={isTimerRunning}
-                isPaused={isTimerPaused}
-                onStop={handleStopTimer}
-                onPause={handlePauseTimer}
-                onResume={handleResumeTimer}
-            />
+            {!isFocusModeActive && (
+                <Timer
+                    task={timeTrackingTask}
+                    isRunning={isTimerRunning}
+                    isPaused={isTimerPaused}
+                    onStop={handleStopTimer}
+                    onPause={handlePauseTimer}
+                    onResume={handleResumeTimer}
+                />
+            )}
+
+            {/* Focus Mode */}
+            {isFocusModeActive && timeTrackingTask && (
+                <FocusMode
+                    task={timeTrackingTask}
+                    isRunning={isTimerRunning}
+                    isPaused={isTimerPaused}
+                    elapsedTime={elapsedTime}
+                    onClose={() => setIsFocusModeActive(false)}
+                    onPause={handlePauseTimer}
+                    onResume={handleResumeTimer}
+                    onStop={handleStopTimer}
+                    onSubtaskUpdate={handleFocusModeSubtaskUpdate}
+                />
+            )}
 
             {/* Error display */}
             {error && (
@@ -1101,224 +1236,166 @@ export default function Dashboard() {
                 </Alert>
             )}
 
-            {/* Add task input */}
-            <div className="bg-white p-4 rounded-xl shadow-md border border-gray-100">
-                <h3 className="text-gray-700 font-medium mb-2 flex items-center">
-                    <PlusCircle className="h-4 w-4 mr-2 text-blue-600" />
-                    Add New Task
-                </h3>
-                <div className="flex items-center space-x-2">
-                    <Input
-                        placeholder="What needs to be done today?"
-                        value={newTaskTitle}
-                        onChange={(e) => setNewTaskTitle(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !isAddingTask && newTaskTitle.trim()) {
-                                handleAddTask();
-                            }
-                        }}
-                        disabled={isAddingTask}
-                        className="bg-gray-50"
-                    />
-                    <Button
-                        onClick={handleAddTask}
-                        disabled={isAddingTask || !newTaskTitle.trim()}
-                        className={`${showDueWarning ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                    >
-                        <PlusCircle className="h-4 w-4 mr-2" />
-                        Add
-                    </Button>
-                </div>
-            </div>
-
-            {/* Stage Management Actions */}
-            {isManagingStages && (
-                <div className="flex items-center justify-between bg-gradient-to-r from-blue-100 to-indigo-100 p-4 rounded-xl shadow-md mb-2">
-                    <div className="flex items-center">
-                        <div className="bg-blue-600 text-white p-2 rounded-lg shadow-sm mr-3">
-                            <Layers className="h-4 w-4" />
-                        </div>
-                        <div>
-                            <h3 className="font-medium text-blue-800">Stage Management Mode</h3>
-                            <p className="text-sm text-blue-600">Customize your workflow stages</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <Button
-                            variant="default"
-                            size="sm"
-                            onClick={() => setIsAddStageDialogOpen(true)}
-                            className="bg-blue-600 hover:bg-blue-700"
-                        >
-                            <PlusCircle className="h-4 w-4 mr-1" />
-                            Add Stage
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setIsManagingStages(false)}
-                            className="border-blue-300 text-blue-700 hover:bg-blue-50"
-                        >
-                            <X className="h-4 w-4 mr-1" />
-                            Exit
-                        </Button>
-                    </div>
-                </div>
-            )}
-
-            <div className="relative">
-                {/* Scroll buttons */}
-                {/* {canScrollLeft && (
-                    <div className="absolute left-0 top-1/2 -mt-12 z-10">
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-12 w-8 rounded-l-md rounded-r-none border-r-0 bg-white/90 shadow-md"
-                            onClick={() => scrollColumns('left')}
-                        >
-                            <ChevronLeft className="h-4 w-4" />
-                        </Button>
-                    </div>
-                )} */}
-
-                {/* {canScrollRight && (
-                    <div className="absolute right-0 top-1/2 -mt-12 z-10">
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            className="h-12 w-8 rounded-r-md rounded-l-none border-l-0 bg-white/90 shadow-md"
-                            onClick={() => scrollColumns('right')}
-                        >
-                            <ChevronRight className="h-4 w-4" />
-                        </Button>
-                    </div>
-                )} */}
-
-                {/* Scrollable columns container */}
-                <div
-                    ref={columnsContainerRef}
-                    className="flex overflow-x-auto pb-4 px-2 -mx-2 hide-scrollbar"
-                    style={{
-                        scrollbarWidth: 'none',
-                        msOverflowStyle: 'none',
-                        minHeight: 'calc(100vh - 420px)',
-                        scrollSnapType: 'x mandatory' // Add snap scrolling for better mobile experience
-                    }}
-                >
-                    {columnsWithIcons.map((column, index) => (
-                        <div
-                            key={column.id}
-                            className="flex-shrink-0 md:w-[calc(61.8%-0.5rem)] w-[90%] min-w-[280px] max-w-[400px] mr-4 last:mr-0 flex flex-col h-full"
-                            style={{ scrollSnapAlign: 'start' }} // Makes columns snap during scroll on mobile
-                        >
-                            {/* Column header */}
-                            <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center space-x-2">
-                                    <div className="flex items-center justify-center w-8 h-8 rounded-lg" style={{
-                                        backgroundColor: `${column.color}20`,
-                                        color: column.color
-                                    }}>
-                                        {column.icon}
-                                    </div>
-                                    <h3 className="font-medium">{column.title}</h3>
-                                    <Badge variant="outline" className="bg-white">
-                                        {getTasksByStatus(column.status).length}
-                                    </Badge>
-                                </div>
-
-                                {isManagingStages && (
-                                    <div className="flex items-center space-x-1">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7"
-                                            onClick={() => handleMoveStageLeft(column.id)}
-                                            disabled={index === 0}
-                                        >
-                                            <ChevronLeft className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7"
-                                            onClick={() => handleMoveStageRight(column.id)}
-                                            disabled={index === columnsWithIcons.length - 1}
-                                        >
-                                            <ChevronRight className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7"
-                                            onClick={() => {
-                                                setStageToEdit({
-                                                    id: column.id,
-                                                    title: column.title,
-                                                    color: column.color,
-                                                    icon: column.icon.type.render().props.icon || 'Circle',
-                                                    isActive: column.isActive
-                                                });
-                                            }}
-                                        >
-                                            <Edit2 className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                            onClick={() => {
-                                                setStageToDelete(column);
-                                                setIsConfirmDeleteOpen(true);
-                                            }}
-                                            disabled={columnsWithIcons.length <= 1}
-                                        >
-                                            <X className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                )}
+            {
+                !isFocusModeActive && (
+                    <>
+                        {/* Add task input */}
+                        <div className="bg-white p-4 rounded-xl shadow-md border border-gray-100">
+                            <h3 className="text-gray-700 font-medium mb-2 flex items-center">
+                                <PlusCircle className="h-4 w-4 mr-2 text-blue-600" />
+                                Add New Task
+                            </h3>
+                            <div className="flex items-center space-x-2">
+                                <Input
+                                    placeholder="What needs to be done today?"
+                                    value={newTaskTitle}
+                                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !isAddingTask && newTaskTitle.trim()) {
+                                            handleAddTask();
+                                        }
+                                    }}
+                                    disabled={isAddingTask}
+                                    className="bg-gray-50"
+                                />
+                                <Button
+                                    onClick={handleAddTask}
+                                    disabled={isAddingTask || !newTaskTitle.trim()}
+                                    className={`${showDueWarning ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                >
+                                    <PlusCircle className="h-4 w-4 mr-2" />
+                                    Add
+                                </Button>
                             </div>
+                        </div>
 
-                            {/* Task cards - with flexible height instead of fixed */}
-                            <div className="flex-1 bg-gray-50 rounded-xl p-3 shadow-inner overflow-y-auto">
-                                <div className="space-y-3 min-h-[200px]">
-                                    {getTasksByStatus(column.status).map((task) => (
-                                        <TaskCard
-                                            key={task.id}
-                                            task={task}
-                                            columns={columnsWithIcons}
-                                            onOpenTask={handleOpenTask}
-                                            onStatusChange={handleStatusChange}
-                                            onDelete={handleTaskDeleted}
-                                            onStartTimer={handleStartTimer}
-                                        />
-                                    ))}
 
-                                    {getTasksByStatus(column.status).length === 0 && (
-                                        <div className="flex flex-col items-center justify-center py-10 text-gray-400 text-sm">
-                                            <Circle className="h-10 w-10 mb-3 opacity-20" />
-                                            <p>No tasks in this column</p>
-                                            <p className="text-xs text-gray-400 mt-1">Add a task to get started</p>
+
+                        <div className="relative">
+                            <div
+                                ref={columnsContainerRef}
+                                className="flex overflow-x-auto pb-4 px-2 -mx-2 hide-scrollbar"
+                                style={{
+                                    scrollbarWidth: 'none',
+                                    msOverflowStyle: 'none',
+                                    minHeight: 'calc(100vh - 420px)',
+                                    scrollSnapType: 'x mandatory' // Add snap scrolling for better mobile experience
+                                }}
+                            >
+                                {columnsWithIcons.map((column, index) => (
+                                    <div
+                                        key={column.id}
+                                        className="flex-shrink-0 md:w-[calc(61.8%-0.5rem)] w-[90%] min-w-[280px] max-w-[400px] mr-4 last:mr-0 flex flex-col h-full"
+                                        style={{ scrollSnapAlign: 'start' }} // Makes columns snap during scroll on mobile
+                                    >
+                                        {/* Column header */}
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center space-x-2">
+                                                <div className="flex items-center justify-center w-8 h-8 rounded-lg" style={{
+                                                    backgroundColor: `${column.color}20`,
+                                                    color: column.color
+                                                }}>
+                                                    {column.icon}
+                                                </div>
+                                                <h3 className="font-medium">{column.title}</h3>
+                                                <Badge variant="outline" className="bg-white">
+                                                    {getTasksByStatus(column.status).length}
+                                                </Badge>
+                                            </div>
+
+                                            {isManagingStages && (
+                                                <div className="flex items-center space-x-1">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7"
+                                                        onClick={() => handleMoveStageLeft(column.id)}
+                                                        disabled={index === 0}
+                                                    >
+                                                        <ChevronLeft className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7"
+                                                        onClick={() => handleMoveStageRight(column.id)}
+                                                        disabled={index === columnsWithIcons.length - 1}
+                                                    >
+                                                        <ChevronRight className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7"
+                                                        onClick={() => {
+                                                            setStageToEdit({
+                                                                id: column.id,
+                                                                title: column.title,
+                                                                color: column.color,
+                                                                icon: column.icon.type.render().props.icon || 'Circle',
+                                                                isActive: column.isActive
+                                                            });
+                                                        }}
+                                                    >
+                                                        <Edit2 className="h-4 w-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-7 w-7 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                        onClick={() => {
+                                                            setStageToDelete(column);
+                                                            setIsConfirmDeleteOpen(true);
+                                                        }}
+                                                        disabled={columnsWithIcons.length <= 1}
+                                                    >
+                                                        <X className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
+
+                                        {/* Task cards - with flexible height instead of fixed */}
+                                        <div className="flex-1 bg-gray-50 rounded-xl p-3 shadow-inner overflow-y-auto">
+                                            <div className="space-y-3 min-h-[200px]">
+                                                {getTasksByStatus(column.status).map((task) => (
+                                                    <TaskCard
+                                                        key={task.id}
+                                                        task={task}
+                                                        columns={columnsWithIcons}
+                                                        onOpenTask={handleOpenTask}
+                                                        onStatusChange={handleStatusChange}
+                                                        onDelete={handleTaskDeleted}
+                                                        onStartTimer={handleStartTimer}
+                                                    />
+                                                ))}
+
+                                                {getTasksByStatus(column.status).length === 0 && (
+                                                    <div className="flex flex-col items-center justify-center py-10 text-gray-400 text-sm">
+                                                        <Circle className="h-10 w-10 mb-3 opacity-20" />
+                                                        <p>No tasks in this column</p>
+                                                        <p className="text-xs text-gray-400 mt-1">Add a task to get started</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
-                    ))}
-                </div>
-            </div>
 
-            {/* Task Dialog */}
-            <TaskDialog
-                task={currentTask}
-                isOpen={isTaskDialogOpen}
-                onOpenChange={setIsTaskDialogOpen}
-                columns={columnsWithIcons}
-                onTaskUpdated={handleTaskUpdated}
-                onTaskDeleted={handleTaskDeleted}
-            />
+                        {/* Task Dialog */}
+                        <TaskDialog
+                            task={currentTask}
+                            isOpen={isTaskDialogOpen}
+                            onOpenChange={setIsTaskDialogOpen}
+                            columns={columnsWithIcons}
+                            onTaskUpdated={handleTaskUpdated}
+                            onTaskDeleted={handleTaskDeleted}
+                        />
 
-            {/* CSS for hiding scrollbar */}
-            <style jsx global>{`
+                        {/* CSS for hiding scrollbar */}
+                        <style jsx global>{`
     .hide-scrollbar::-webkit-scrollbar {
         display: none;
     }
@@ -1327,6 +1404,9 @@ export default function Dashboard() {
         scrollbar-width: none;
     }
 `}</style>
+                    </>
+                )
+            }
         </div>
     );
 }
