@@ -1166,11 +1166,10 @@ export default function Dashboard() {
                 </div>
             )}
 
-            {/* Desktop view: Horizontal scrollable Kanban board */}
-            <div className="hidden md:block relative">
+            <div className="relative">
                 {/* Scroll buttons */}
-                {canScrollLeft && (
-                    <div className="absolute left-0 top-1/2 -mt-6 z-10">
+                {/* {canScrollLeft && (
+                    <div className="absolute left-0 top-1/2 -mt-12 z-10">
                         <Button
                             variant="outline"
                             size="icon"
@@ -1180,10 +1179,10 @@ export default function Dashboard() {
                             <ChevronLeft className="h-4 w-4" />
                         </Button>
                     </div>
-                )}
+                )} */}
 
-                {canScrollRight && (
-                    <div className="absolute right-0 top-1/2 -mt-6 z-10">
+                {/* {canScrollRight && (
+                    <div className="absolute right-0 top-1/2 -mt-12 z-10">
                         <Button
                             variant="outline"
                             size="icon"
@@ -1193,16 +1192,25 @@ export default function Dashboard() {
                             <ChevronRight className="h-4 w-4" />
                         </Button>
                     </div>
-                )}
+                )} */}
 
                 {/* Scrollable columns container */}
                 <div
                     ref={columnsContainerRef}
-                    className="flex overflow-x-auto pb-2 px-2 -mx-2 hide-scrollbar"
-                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                    className="flex overflow-x-auto pb-4 px-2 -mx-2 hide-scrollbar"
+                    style={{
+                        scrollbarWidth: 'none',
+                        msOverflowStyle: 'none',
+                        minHeight: 'calc(100vh - 420px)',
+                        scrollSnapType: 'x mandatory' // Add snap scrolling for better mobile experience
+                    }}
                 >
                     {columnsWithIcons.map((column, index) => (
-                        <div key={column.id} className="flex-shrink-0 w-[calc(61.8%-0.5rem)] min-w-[320px] max-w-[400px] mr-4 last:mr-0">
+                        <div
+                            key={column.id}
+                            className="flex-shrink-0 md:w-[calc(61.8%-0.5rem)] w-[90%] min-w-[280px] max-w-[400px] mr-4 last:mr-0 flex flex-col h-full"
+                            style={{ scrollSnapAlign: 'start' }} // Makes columns snap during scroll on mobile
+                        >
                             {/* Column header */}
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center space-x-2">
@@ -1270,8 +1278,8 @@ export default function Dashboard() {
                                 )}
                             </div>
 
-                            {/* Task cards */}
-                            <ScrollArea className="h-[calc(100vh-500px)] bg-gray-50 rounded-xl p-3 shadow-inner">
+                            {/* Task cards - with flexible height instead of fixed */}
+                            <div className="flex-1 bg-gray-50 rounded-xl p-3 shadow-inner overflow-y-auto">
                                 <div className="space-y-3 min-h-[200px]">
                                     {getTasksByStatus(column.status).map((task) => (
                                         <TaskCard
@@ -1293,92 +1301,12 @@ export default function Dashboard() {
                                         </div>
                                     )}
                                 </div>
-                            </ScrollArea>
+                            </div>
                         </div>
                     ))}
                 </div>
             </div>
 
-            {/* Mobile view: Tabs */}
-            <div className="md:hidden">
-                <Tabs defaultValue={columnsWithIcons[0]?.id || "not-started"} className="bg-white rounded-xl shadow-md p-4">
-                    <TabsList className="grid grid-cols-4 mb-4 p-1 bg-gray-100">
-                        {columnsWithIcons.map(column => (
-                            <TabsTrigger
-                                key={column.id}
-                                value={column.id}
-                                className="flex items-center gap-1"
-                            >
-                                <span style={{ color: column.color }}>{column.icon}</span>
-                                <span className="hidden sm:inline ml-1 text-xs">{column.title}</span>
-                                <Badge variant="outline" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
-                                    {getTasksByStatus(column.status).length}
-                                </Badge>
-                            </TabsTrigger>
-                        ))}
-                    </TabsList>
-
-                    {columnsWithIcons.map(column => (
-                        <TabsContent key={column.id} value={column.id} className="mt-0">
-                            <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                    <div className="flex items-center justify-center w-8 h-8 rounded-lg" style={{
-                                        backgroundColor: `${column.color}20`,
-                                        color: column.color
-                                    }}>
-                                        {column.icon}
-                                    </div>
-                                    <h3 className="font-medium text-sm">{column.title}</h3>
-                                </div>
-
-                                {isManagingStages && (
-                                    <div className="flex items-center space-x-1">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => {
-                                                setStageToEdit({
-                                                    id: column.id,
-                                                    title: column.title,
-                                                    color: column.color,
-                                                    icon: column.icon.type.render().props.icon || 'Circle',
-                                                    isActive: column.isActive
-                                                });
-                                            }}
-                                        >
-                                            <Edit2 className="h-3 w-3 mr-1" />
-                                            Edit
-                                        </Button>
-                                    </div>
-                                )}
-                            </div>
-
-                            <ScrollArea className="h-[calc(100vh-500px)] bg-gray-50 rounded-xl p-3 shadow-inner">
-                                <div className="space-y-3">
-                                    {getTasksByStatus(column.status).map((task) => (
-                                        <TaskCard
-                                            key={task.id}
-                                            task={task}
-                                            columns={columnsWithIcons}
-                                            onOpenTask={handleOpenTask}
-                                            onStatusChange={handleStatusChange}
-                                            onDelete={handleTaskDeleted}
-                                            onStartTimer={handleStartTimer}
-                                        />
-                                    ))}
-
-                                    {getTasksByStatus(column.status).length === 0 && (
-                                        <div className="flex flex-col items-center justify-center py-10 text-gray-400 text-sm">
-                                            <Circle className="h-8 w-8 mb-2 opacity-20" />
-                                            <p>No tasks in {column.title.toLowerCase()}</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </ScrollArea>
-                        </TabsContent>
-                    ))}
-                </Tabs>
-            </div>
             {/* Task Dialog */}
             <TaskDialog
                 task={currentTask}
@@ -1389,199 +1317,16 @@ export default function Dashboard() {
                 onTaskDeleted={handleTaskDeleted}
             />
 
-            {/* Add Stage Dialog */}
-            <Dialog open={isAddStageDialogOpen} onOpenChange={setIsAddStageDialogOpen}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Add New Stage</DialogTitle>
-                        <DialogDescription>
-                            Create a new stage for your tasks workflow.
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="stage-name" className="text-right">
-                                Name
-                            </Label>
-                            <Input
-                                id="stage-name"
-                                placeholder="e.g., In Review"
-                                value={newStageName}
-                                onChange={(e) => setNewStageName(e.target.value)}
-                                className="col-span-3"
-                            />
-                        </div>
-
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="stage-icon" className="text-right">
-                                Icon
-                            </Label>
-                            <Select
-                                value={newStageIcon}
-                                onValueChange={setNewStageIcon}
-                            >
-                                <SelectTrigger className="col-span-3">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {availableIcons.map(icon => (
-                                        <SelectItem key={icon.name} value={icon.name}>
-                                            <div className="flex items-center">
-                                                <span className="mr-2">{icon.component}</span>
-                                                {icon.name}
-                                            </div>
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        <div className="grid grid-cols-4 items-center gap-4">
-                            <Label htmlFor="stage-color" className="text-right">
-                                Color
-                            </Label>
-                            <div className="col-span-3 flex items-center gap-2">
-                                <div
-                                    className="w-8 h-8 rounded border"
-                                    style={{ backgroundColor: newStageColor }}
-                                />
-                                <Input
-                                    id="stage-color"
-                                    type="color"
-                                    value={newStageColor}
-                                    onChange={(e) => setNewStageColor(e.target.value)}
-                                    className="w-auto"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setIsAddStageDialogOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button type="button" onClick={handleAddStage} disabled={!newStageName.trim()}>
-                            Add Stage
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Edit Stage Dialog */}
-            {stageToEdit && (
-                <Dialog
-                    open={!!stageToEdit}
-                    onOpenChange={(open) => !open && setStageToEdit(null)}
-                >
-                    <DialogContent className="sm:max-w-md">
-                        <DialogHeader>
-                            <DialogTitle>Edit Stage</DialogTitle>
-                            <DialogDescription>
-                                Modify the stage properties.
-                            </DialogDescription>
-                        </DialogHeader>
-
-                        <div className="grid gap-4 py-4">
-                            <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="edit-stage-name" className="text-right">
-                                    Name
-                                </Label>
-                                <Input
-                                    id="edit-stage-name"
-                                    value={stageToEdit.title}
-                                    onChange={(e) => setStageToEdit({ ...stageToEdit, title: e.target.value })}
-                                    className="col-span-3"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="edit-stage-icon" className="text-right">
-                                    Icon
-                                </Label>
-                                <Select
-                                    value={stageToEdit.icon}
-                                    onValueChange={(value) => setStageToEdit({ ...stageToEdit, icon: value })}
-                                >
-                                    <SelectTrigger className="col-span-3">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {availableIcons.map(icon => (
-                                            <SelectItem key={icon.name} value={icon.name}>
-                                                <div className="flex items-center">
-                                                    <span className="mr-2">{icon.component}</span>
-                                                    {icon.name}
-                                                </div>
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="grid grid-cols-4 items-center gap-4">
-                                <Label htmlFor="edit-stage-color" className="text-right">
-                                    Color
-                                </Label>
-                                <div className="col-span-3 flex items-center gap-2">
-                                    <div
-                                        className="w-8 h-8 rounded border"
-                                        style={{ backgroundColor: stageToEdit.color }}
-                                    />
-                                    <Input
-                                        id="edit-stage-color"
-                                        type="color"
-                                        value={stageToEdit.color}
-                                        onChange={(e) => setStageToEdit({ ...stageToEdit, color: e.target.value })}
-                                        className="w-auto"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <DialogFooter>
-                            <Button type="button" variant="outline" onClick={() => setStageToEdit(null)}>
-                                Cancel
-                            </Button>
-                            <Button type="button" onClick={handleUpdateStage} disabled={!stageToEdit.title.trim()}>
-                                Save Changes
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-            )}
-
-            {/* Delete Stage Confirmation Dialog */}
-            <Dialog open={isConfirmDeleteOpen} onOpenChange={setIsConfirmDeleteOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Delete Stage</DialogTitle>
-                        <DialogDescription>
-                            Are you sure you want to delete the "{stageToDelete?.title}" stage?
-                            Tasks in this stage will be moved to another active stage.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsConfirmDeleteOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button variant="destructive" onClick={handleDeleteStage}>
-                            Delete
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
             {/* CSS for hiding scrollbar */}
             <style jsx global>{`
-                .hide-scrollbar::-webkit-scrollbar {
-                    display: none;
-                }
-                .hide-scrollbar {
-                    -ms-overflow-style: none;
-                    scrollbar-width: none;
-                }
-            `}</style>
+    .hide-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+    .hide-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+`}</style>
         </div>
     );
 }

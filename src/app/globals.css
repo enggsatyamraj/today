@@ -143,3 +143,10 @@
     background-color: rgba(100, 100, 100, 0.7);
   }
 }
+
+@layer base {
+  html,
+  body {
+    overflow-x: hidden;
+  }
+}
