@@ -132,34 +132,30 @@ export default function Timer({
                     </div>
 
                     {isRunning && task && (
-                        <div className="flex items-center ml-4 gap-2">
-                            {isPaused ? (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-green-600 border-green-600"
-                                    onClick={onResume}
-                                >
-                                    <Play className="h-4 w-4 mr-1" /> Resume
-                                </Button>
-                            ) : (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-amber-600 border-amber-600"
-                                    onClick={onPause}
-                                >
-                                    <Pause className="h-4 w-4 mr-1" /> Pause
-                                </Button>
-                            )}
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-red-600 border-red-600"
-                                onClick={onStop}
-                            >
-                                <StopCircle className="h-4 w-4 mr-1" /> Stop
-                            </Button>
+                        <div className="mt-3 pt-3 border-t border-green-200">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                    <div className={`${isPaused ? 'bg-amber-100' : 'bg-green-100'} p-1 rounded-full mr-2`}>
+                                        {isPaused ? (
+                                            <Pause className="h-3 w-3 text-amber-600" />
+                                        ) : (
+                                            <Play className="h-3 w-3 text-green-600" />
+                                        )}
+                                    </div>
+                                    <div>
+                                        <div className="text-sm font-medium">
+                                            {isPaused ? 'Paused:' : 'Currently working on:'}
+                                        </div>
+                                        <div className="text-sm text-gray-600">{task.title}</div>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-xs text-gray-500">Time elapsed</div>
+                                    <div className="text-sm font-mono font-medium">
+                                        {formatElapsedTime(elapsedTime)}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>

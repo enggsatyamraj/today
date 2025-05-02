@@ -5,7 +5,6 @@ import supabase from './supabase-client';
 export const TASK_STATUS = {
     NOT_STARTED: 'Not Started',
     IN_PROGRESS: 'In Progress',
-    WORKING_ON: 'Working On',
     COMPLETED: 'Completed'
 };
 

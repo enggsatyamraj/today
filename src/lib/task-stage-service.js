@@ -161,18 +161,10 @@ export const taskStageService = {
                 },
                 {
                     user_id: userId,
-                    name: 'Working On',
-                    color: '#10B981', // emerald-500
-                    icon: 'Clock',
-                    order: 3,
-                    is_active: true
-                },
-                {
-                    user_id: userId,
                     name: 'Completed',
                     color: '#34D399', // emerald-400
                     icon: 'CheckCircle',
-                    order: 4,
+                    order: 3,
                     is_active: true
                 }
             ];

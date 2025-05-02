@@ -203,7 +203,6 @@ export default function Dashboard() {
             return [
                 { id: 'not-started', title: 'Not Started', status: TASK_STATUS.NOT_STARTED, icon: <Circle className="h-4 w-4" />, color: '#9CA3AF' },
                 { id: 'in-progress', title: 'In Progress', status: TASK_STATUS.IN_PROGRESS, icon: <Play className="h-4 w-4" />, color: '#3B82F6' },
-                { id: 'working-on', title: 'Working On', status: TASK_STATUS.WORKING_ON, icon: <Clock className="h-4 w-4" />, color: '#10B981' },
                 { id: 'completed', title: 'Completed', status: TASK_STATUS.COMPLETED, icon: <CheckCircle className="h-4 w-4" />, color: '#34D399' }
             ];
         }
@@ -546,6 +545,7 @@ export default function Dashboard() {
             }
 
             // Update statistics immediately for responsive UI
+            // Update statistics
             setStatistics(prev => {
                 const updatedStats = { ...prev };
                 const byStatus = { ...updatedStats.byStatus };
@@ -585,12 +585,6 @@ export default function Dashboard() {
                     updatedStats.notStarted = Math.max(0, updatedStats.notStarted - 1);
                 } else if (oldStatus !== 'Not Started' && newStatus === 'Not Started') {
                     updatedStats.notStarted = updatedStats.notStarted + 1;
-                }
-
-                if (oldStatus === 'Working On' && newStatus !== 'Working On') {
-                    updatedStats.workingOn = Math.max(0, updatedStats.workingOn - 1);
-                } else if (oldStatus !== 'Working On' && newStatus === 'Working On') {
-                    updatedStats.workingOn = updatedStats.workingOn + 1;
                 }
 
                 updatedStats.byStatus = byStatus;
@@ -706,12 +700,12 @@ export default function Dashboard() {
 
             if (error) throw error;
 
-            // Find the "Working On" stage
-            const workingOnStage = stages.find(s => s.name === 'Working On');
+            // Find the "In Progress" stage
+            const inProgressStage = stages.find(s => s.name === 'In Progress');
 
-            // Update task status to "Working On" if it's not already
-            if (task.status !== 'Working On' && workingOnStage) {
-                await handleStatusChange(task.id, 'Working On');
+            // Update task status to "In Progress" if it's not already
+            if (task.status !== 'In Progress' && inProgressStage) {
+                await handleStatusChange(task.id, 'In Progress');
             }
 
             // Set up time tracking state
