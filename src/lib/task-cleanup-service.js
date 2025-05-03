@@ -41,18 +41,12 @@ export const taskCleanupService = {
                 .eq('user_id', userId)
                 .eq('keep_after_cleanup', false); // Never delete tasks marked to keep
 
-            // If remove_completed_tasks is true, only delete completed tasks
-            // If it's false, don't delete any tasks (this option doesn't make much sense now)
             if (settings.keep_completed_tasks) {
-                // Delete completed tasks
+                // If keep_completed_tasks is true, only delete completed tasks
                 query = query.eq('status', 'Completed');
             } else {
-                // Don't delete any tasks if this option is disabled
-                return {
-                    success: true,
-                    message: 'No tasks were cleaned up based on your settings',
-                    count: 0
-                };
+                // If keep_completed_tasks is false, delete all tasks not marked to keep
+                // (No additional filter needed since we already have .eq('keep_after_cleanup', false))
             }
 
             const { error, count } = await query;
@@ -61,7 +55,7 @@ export const taskCleanupService = {
 
             return {
                 success: true,
-                message: `Successfully cleaned up ${count} completed tasks`,
+                message: `Successfully cleaned up ${count} tasks`,
                 count
             };
         } catch (error) {

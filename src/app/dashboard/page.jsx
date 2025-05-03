@@ -274,6 +274,7 @@ export default function Dashboard() {
                 const currentHour = now.getHours();
                 const currentMinute = now.getMinutes();
                 const currentTimeStr = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
+                const currentDateStr = now.toDateString();
 
                 // Parse start and end times properly (handle both 'HH:MM' and 'HH:MM:SS' formats)
                 const startTime = settings.work_start_time ?
@@ -300,14 +301,20 @@ export default function Dashboard() {
 
                 // Check for end-of-day cleanup prompt
                 if (settings.auto_delete_tasks) {
+                    // Check if we've already shown the cleanup prompt today
+                    const lastCleanupPromptDate = localStorage.getItem('lastCleanupPromptDate');
+
                     // Show cleanup prompt if we're within 5 minutes after work end time
+                    // AND we haven't shown it today already
                     const isJustAfterWorkHours = !isOvernightShift
                         ? (currentTimeStr >= endTime && currentTimeStr <= advanceTimeByMinutes(endTime, 5))
                         : (currentTimeStr >= endTime && currentTimeStr <= advanceTimeByMinutes(endTime, 5)) ||
                         (currentTimeStr >= '23:55' || currentTimeStr <= '00:05');
 
-                    if (isJustAfterWorkHours) {
+                    if (isJustAfterWorkHours && lastCleanupPromptDate !== currentDateStr) {
                         setShowEndDayPrompt(true);
+                        // Save today's date to localStorage so we don't show it again today
+                        localStorage.setItem('lastCleanupPromptDate', currentDateStr);
                     }
                 }
             }
@@ -339,6 +346,10 @@ export default function Dashboard() {
                 console.error('Error during cleanup:', err);
                 setError('An error occurred during task cleanup.');
             }
+        } else {
+            // User chose to skip cleanup - mark as done for today
+            const currentDateStr = new Date().toDateString();
+            localStorage.setItem('lastCleanupPromptDate', currentDateStr);
         }
     };
 
