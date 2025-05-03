@@ -1,3 +1,4 @@
+// Modified src/app/settings/page.jsx
 'use client';
 
 import { useState } from 'react';
@@ -18,8 +19,9 @@ import {
     CardTitle
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Settings, Layers, User } from 'lucide-react';
+import { Settings, Layers, User, Clock } from 'lucide-react';
 import StageManager from '@/components/StageManager';
+import WorkHoursSettings from '@/components/WorkHoursSettings';
 
 export default function SettingsPage() {
     const { user } = useAuth();
@@ -59,6 +61,7 @@ export default function SettingsPage() {
                             <TabsList className="mb-6">
                                 <TabsTrigger value="general">General</TabsTrigger>
                                 <TabsTrigger value="tasks">Tasks</TabsTrigger>
+                                <TabsTrigger value="workhours">Work Hours</TabsTrigger>
                                 <TabsTrigger value="account">Account</TabsTrigger>
                             </TabsList>
 
@@ -105,6 +108,10 @@ export default function SettingsPage() {
                                         </div>
                                     </CardContent>
                                 </Card>
+                            </TabsContent>
+
+                            <TabsContent value="workhours">
+                                <WorkHoursSettings />
                             </TabsContent>
 
                             <TabsContent value="account">

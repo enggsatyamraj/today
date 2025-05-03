@@ -7,7 +7,9 @@ import {
     CheckCircle2,
     Timer,
     MessageSquare,
-    AlertTriangle
+    AlertTriangle,
+    BookmarkPlus,
+    Bookmark
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import subtaskService from '@/lib/subtask-service';
 import timeTrackingService from '@/lib/time-tracking-service';
+import taskCleanupService from '@/lib/task-cleanup-service';
 import ConfirmationDialog from './ConfirmationDialog';
 
 export default function TaskCard({
@@ -30,7 +33,8 @@ export default function TaskCard({
     onOpenTask,
     onStatusChange,
     onDelete,
-    onStartTimer
+    onStartTimer,
+    onToggleKeep
 }) {
     // Delete confirmation state
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -92,6 +96,22 @@ export default function TaskCard({
         onDelete(task.id);
     };
 
+    // Handle keep task toggle
+    const handleToggleKeep = async (e) => {
+        e.stopPropagation();
+
+        try {
+            const newKeepStatus = !task.keep_after_cleanup;
+            const result = await taskCleanupService.markTasksToKeep([task.id], newKeepStatus);
+
+            if (result.success && onToggleKeep) {
+                onToggleKeep(task.id, newKeepStatus);
+            }
+        } catch (error) {
+            console.error('Error toggling task keep status:', error);
+        }
+    };
+
     return (
         <>
             <div className="mb-3">
@@ -109,6 +129,12 @@ export default function TaskCard({
                                     <span className="inline-flex items-center ml-2 text-red-500">
                                         <AlertTriangle className="h-3 w-3 mr-1" />
                                         <span className="text-xs">Overdue</span>
+                                    </span>
+                                )}
+                                {task.keep_after_cleanup && (
+                                    <span className="inline-flex items-center ml-2 text-blue-500">
+                                        <Bookmark className="h-3 w-3 mr-1" />
+                                        <span className="text-xs">Keep</span>
                                     </span>
                                 )}
                             </div>
@@ -146,6 +172,22 @@ export default function TaskCard({
 
                                     <DropdownMenuSeparator />
 
+                                    <DropdownMenuItem onClick={handleToggleKeep}>
+                                        {task.keep_after_cleanup ? (
+                                            <>
+                                                <Bookmark className="h-4 w-4 mr-2 text-blue-500 fill-blue-500" />
+                                                <span>Remove Keep Status</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <BookmarkPlus className="h-4 w-4 mr-2" />
+                                                <span>Keep After Cleanup</span>
+                                            </>
+                                        )}
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuSeparator />
+
                                     <DropdownMenuItem
                                         className="text-red-600"
                                         onClick={confirmDelete}
@@ -155,6 +197,7 @@ export default function TaskCard({
                                 </DropdownMenuContent>
                             </DropdownMenu>
                         </div>
+
                     </CardHeader>
                     <CardContent className="p-3">
                         {task.description && (

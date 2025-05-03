@@ -23,7 +23,9 @@ import {
     ListChecks,
     BarChart3,
     AlertTriangle,
-    Pause
+    Pause,
+    BookmarkPlus,
+    Bookmark
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -63,12 +65,15 @@ import taskStageService from '@/lib/task-stage-service';
 import subtaskService from '@/lib/subtask-service';
 import timeTrackingService from '@/lib/time-tracking-service';
 import subscriptionUtils from '@/lib/subscription-utils';
+import userSettingsService from '@/lib/user-settings-service';
+import taskCleanupService from '@/lib/task-cleanup-service';
 
 // Import components
 import TaskCard from '@/components/TaskCard';
 import TaskDialog from '@/components/TaskDialog';
 import Timer from '@/components/Timer';
 import FocusMode from '@/components/FocusMode';
+import OnboardingModal from '@/components/OnboardingModal';
 
 // Map of icon names to components
 const iconComponents = {
@@ -185,6 +190,11 @@ export default function Dashboard() {
     const [stageToDelete, setStageToDelete] = useState(null);
     const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
 
+    // Work hours and task cleanup state
+    const [userSettings, setUserSettings] = useState(null);
+    const [isWithinWorkHours, setIsWithinWorkHours] = useState(true);
+    const [showEndDayPrompt, setShowEndDayPrompt] = useState(false);
+
     // Horizontal scroll for stages
     const columnsContainerRef = useRef(null);
     const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -218,6 +228,129 @@ export default function Dashboard() {
             order: stage.order
         }));
     }, [stages]);
+
+    // Helper function to add minutes to a time string (HH:MM)
+    const advanceTimeByMinutes = (timeStr, minutes) => {
+        const [hours, mins] = timeStr.split(':').map(Number);
+        const date = new Date();
+        date.setHours(hours, mins + minutes, 0, 0);
+        return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    };
+
+    useEffect(() => {
+        // Run on first load
+        checkWorkHours();
+
+        // Set up a timer to check every minute
+        const intervalId = setInterval(checkWorkHours, 60000);
+
+        // Also check when the window gains focus (user returns from settings page)
+        const handleFocus = () => {
+            checkWorkHours();
+        };
+
+        // Add event listener for when the window regains focus
+        window.addEventListener('focus', handleFocus);
+
+        // Clean up
+        return () => {
+            clearInterval(intervalId);
+            window.removeEventListener('focus', handleFocus);
+        };
+    }, [user]);
+
+    // Check work hours and task cleanup status
+    const checkWorkHours = async () => {
+        if (!user) return;
+
+        try {
+            const { data: settings } = await userSettingsService.getUserSettings(user.id);
+
+            // Always update local settings state when we get fresh data
+            if (settings) {
+                setUserSettings(settings);
+
+                const now = new Date();
+                const currentHour = now.getHours();
+                const currentMinute = now.getMinutes();
+                const currentTimeStr = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
+
+                // Parse start and end times properly (handle both 'HH:MM' and 'HH:MM:SS' formats)
+                const startTime = settings.work_start_time ?
+                    settings.work_start_time.substring(0, 5) : '09:00';
+                const endTime = settings.work_end_time ?
+                    settings.work_end_time.substring(0, 5) : '17:00';
+
+                // Determine if current time is within work hours
+                // Handle special case where end time is earlier than start time (overnight shift)
+                const isOvernightShift = startTime > endTime;
+
+                let withinHours;
+                if (isOvernightShift) {
+                    // For overnight shifts, we're within hours if:
+                    // - current time is after start time OR
+                    // - current time is before end time
+                    withinHours = currentTimeStr >= startTime || currentTimeStr <= endTime;
+                } else {
+                    // Normal case: within hours if after start and before end
+                    withinHours = currentTimeStr >= startTime && currentTimeStr <= endTime;
+                }
+
+                setIsWithinWorkHours(withinHours);
+
+                // Check for end-of-day cleanup prompt
+                if (settings.auto_delete_tasks) {
+                    // Show cleanup prompt if we're within 5 minutes after work end time
+                    const isJustAfterWorkHours = !isOvernightShift
+                        ? (currentTimeStr >= endTime && currentTimeStr <= advanceTimeByMinutes(endTime, 5))
+                        : (currentTimeStr >= endTime && currentTimeStr <= advanceTimeByMinutes(endTime, 5)) ||
+                        (currentTimeStr >= '23:55' || currentTimeStr <= '00:05');
+
+                    if (isJustAfterWorkHours) {
+                        setShowEndDayPrompt(true);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error checking work hours:', error);
+        }
+    };
+
+    // Handle end-of-day cleanup
+    const handleEndDayCleanup = async (shouldCleanup = false) => {
+        if (!user) return;
+
+        // Always dismiss the prompt
+        setShowEndDayPrompt(false);
+
+        if (shouldCleanup) {
+            try {
+                const result = await taskCleanupService.cleanupTasks(user.id);
+                if (result.success) {
+                    // Show success toast or notification
+                    setError(`Cleaned up ${result.count} tasks. Have a great evening!`);
+
+                    // Refresh tasks
+                    await fetchTasks();
+                } else {
+                    setError('Failed to clean up tasks. Please try again.');
+                }
+            } catch (err) {
+                console.error('Error during cleanup:', err);
+                setError('An error occurred during task cleanup.');
+            }
+        }
+    };
+
+    // Toggle keep status for a task
+    const handleToggleKeepTask = (taskId, keepStatus) => {
+        // Update the tasks state
+        setTasks(prev =>
+            prev.map(task =>
+                task.id === taskId ? { ...task, keep_after_cleanup: keepStatus } : task
+            )
+        );
+    };
 
     // Check if columns can be scrolled
     useEffect(() => {
@@ -289,6 +422,7 @@ export default function Dashboard() {
         try {
             await fetchStages();
             await fetchTasks();
+            await checkWorkHours();
         } catch (error) {
             console.error('Error refreshing data:', error);
             setError('Failed to refresh data. Please try again.');
@@ -351,16 +485,44 @@ export default function Dashboard() {
         // Fetch stages first, then tasks
         fetchStages().then(() => fetchTasks());
 
+        // Check work hours
+        checkWorkHours();
+
+        // Setup interval to check work hours every minute
+        const workHoursInterval = setInterval(checkWorkHours, 60000); // Check every minute
+
         // Setup subscriptions for real-time updates
         subscriptionsRef.current = subscriptionUtils.setupSubscriptions(user.id, fetchTasks);
 
-        // Cleanup subscriptions on unmount
+        // Cleanup subscriptions and intervals on unmount
         return () => {
             if (subscriptionsRef.current) {
                 subscriptionUtils.removeSubscriptions(subscriptionsRef.current);
             }
+            clearInterval(workHoursInterval);
         };
     }, [user, fetchStages, fetchTasks]);
+
+    const [showOnboarding, setShowOnboarding] = useState(false);
+
+    useEffect(() => {
+        const checkUserOnboarding = async () => {
+            if (!user) return;
+
+            try {
+                const { data: settings } = await userSettingsService.getUserSettings(user.id);
+
+                // If this is a new user (no settings yet) or onboarding isn't completed
+                if (!settings || settings.onboarding_completed === false) {
+                    setShowOnboarding(true);
+                }
+            } catch (error) {
+                console.error('Error checking user onboarding status:', error);
+            }
+        };
+
+        checkUserOnboarding();
+    }, [user]);
 
     // Add a new task
     const handleAddTask = async () => {
@@ -737,7 +899,6 @@ export default function Dashboard() {
 
                 // Also subtract accumulated paused time
                 totalElapsed -= savedState.timeTracking.totalPausedTime || 0;
-
                 setElapsedTime(totalElapsed);
             }
         }
@@ -997,7 +1158,6 @@ export default function Dashboard() {
         }
     };
 
-
     // Get tasks by status
     const getTasksByStatus = (status) => {
         return tasks.filter(task => task.status === status);
@@ -1072,6 +1232,20 @@ export default function Dashboard() {
     if (isLoading && tasks.length === 0) {
         return <SkeletonLoader />;
     }
+
+    const formatTimeDisplay = (timeString) => {
+        if (!timeString) return '';
+
+        // Extract just HH:MM from the time string
+        const timePart = timeString.substring(0, 5);
+
+        // Convert 24h to 12h format for display
+        const [hours, minutes] = timePart.split(':').map(Number);
+        const period = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12; // Convert 0 to 12 for 12 AM
+
+        return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+    };
 
     return (
         <div className="space-y-6">
@@ -1203,6 +1377,17 @@ export default function Dashboard() {
                         </Button>
                     </div>
                 </div>
+            )}
+
+            {/* Work Hours Alert - Show when not in work hours */}
+            {!isWithinWorkHours && userSettings && (
+                <Alert className="mb-4 bg-amber-50 border-amber-200">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <AlertDescription className="text-amber-800">
+                        You're outside your configured work hours ({formatTimeDisplay(userSettings.work_start_time)} - {formatTimeDisplay(userSettings.work_end_time)}).
+                        Tasks you create now will be included in your next work day.
+                    </AlertDescription>
+                </Alert>
             )}
 
             {/* Overdue tasks warning */}
@@ -1364,8 +1549,6 @@ export default function Dashboard() {
                             </div>
                         </div>
 
-
-
                         <div className="relative">
                             <div
                                 ref={columnsContainerRef}
@@ -1451,28 +1634,28 @@ export default function Dashboard() {
                                         </div>
 
                                         {/* Task cards - with flexible height instead of fixed */}
-                                        <div className="flex-1 bg-gray-50 rounded-xl p-3 shadow-inner overflow-y-auto">
-                                            <div className="space-y-3 min-h-[200px]">
-                                                {getTasksByStatus(column.status).map((task) => (
-                                                    <TaskCard
-                                                        key={task.id}
-                                                        task={task}
-                                                        columns={columnsWithIcons}
-                                                        onOpenTask={handleOpenTask}
-                                                        onStatusChange={handleStatusChange}
-                                                        onDelete={handleTaskDeleted}
-                                                        onStartTimer={handleStartTimer}
-                                                    />
-                                                ))}
+                                        <div className="flex-1 bg-gray-50 rounded-xl p-3 shadow-inner overflow-y-auto"><div className="space-y-3 min-h-[200px]">
+                                            {getTasksByStatus(column.status).map((task) => (
+                                                <TaskCard
+                                                    key={task.id}
+                                                    task={task}
+                                                    columns={columnsWithIcons}
+                                                    onOpenTask={handleOpenTask}
+                                                    onStatusChange={handleStatusChange}
+                                                    onDelete={handleTaskDeleted}
+                                                    onStartTimer={handleStartTimer}
+                                                    onToggleKeep={handleToggleKeepTask}
+                                                />
+                                            ))}
 
-                                                {getTasksByStatus(column.status).length === 0 && (
-                                                    <div className="flex flex-col items-center justify-center py-10 text-gray-400 text-sm">
-                                                        <Circle className="h-10 w-10 mb-3 opacity-20" />
-                                                        <p>No tasks in this column</p>
-                                                        <p className="text-xs text-gray-400 mt-1">Add a task to get started</p>
-                                                    </div>
-                                                )}
-                                            </div>
+                                            {getTasksByStatus(column.status).length === 0 && (
+                                                <div className="flex flex-col items-center justify-center py-10 text-gray-400 text-sm">
+                                                    <Circle className="h-10 w-10 mb-3 opacity-20" />
+                                                    <p>No tasks in this column</p>
+                                                    <p className="text-xs text-gray-400 mt-1">Add a task to get started</p>
+                                                </div>
+                                            )}
+                                        </div>
                                         </div>
                                     </div>
                                 ))}
@@ -1491,17 +1674,87 @@ export default function Dashboard() {
 
                         {/* CSS for hiding scrollbar */}
                         <style jsx global>{`
-    .hide-scrollbar::-webkit-scrollbar {
-        display: none;
-    }
-    .hide-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-    }
-`}</style>
+                            .hide-scrollbar::-webkit-scrollbar {
+                                display: none;
+                            }
+                            .hide-scrollbar {
+                                -ms-overflow-style: none;
+                                scrollbar-width: none;
+                            }
+                        `}</style>
                     </>
                 )
             }
+
+            {/* End-of-day task cleanup dialog */}
+            <Dialog open={showEndDayPrompt} onOpenChange={setShowEndDayPrompt}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>End of Day Cleanup</DialogTitle>
+                        <DialogDescription>
+                            <p>Your workday is ending. Would you like to clean up your tasks now?</p>
+
+                            {userSettings?.keep_completed_tasks && (
+                                <p className="mt-2 flex items-center text-green-600">
+                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                    Completed tasks will be removed to declutter your dashboard
+                                </p>
+                            )}
+
+                            <p className="mt-2 flex items-center text-blue-600">
+                                <Bookmark className="h-4 w-4 mr-2 fill-blue-500" />
+                                Tasks marked "Keep" will be preserved regardless of status
+                            </p>
+
+                            <p className="mt-2 flex items-center text-amber-600">
+                                <AlertCircle className="h-4 w-4 mr-2" />
+                                Incomplete tasks will remain for tomorrow
+                            </p>
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => handleEndDayCleanup(false)}>
+                            Skip Cleanup
+                        </Button>
+                        <Button onClick={() => handleEndDayCleanup(true)}>
+                            Clean Up Tasks
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Stage edit/delete dialogs */}
+            <Dialog open={isConfirmDeleteOpen} onOpenChange={setIsConfirmDeleteOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Stage</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to delete the "{stageToDelete?.title}" stage?
+                            Tasks in this stage will be moved to another active stage.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsConfirmDeleteOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={handleDeleteStage}
+                        >
+                            Delete
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Onboarding modal for new users */}
+            {showOnboarding && (
+                <OnboardingModal
+                    userId={user?.id}
+                    isOpen={showOnboarding}
+                    onComplete={() => setShowOnboarding(false)}
+                />
+            )}
         </div>
     );
 }
